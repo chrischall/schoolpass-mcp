@@ -137,6 +137,29 @@ describe('SchoolPassClient.request', () => {
     expect(dataCalls[0]!.init.body).toBe('{"a":1}');
   });
 
+  it('submitStudentChange attaches modifiedBy + parentMemberId (the parent id)', async () => {
+    const { fetchImpl, dataCalls } = scriptedFetch(() => new Response('{"ok":1}', { status: 200 }));
+    const client = new SchoolPassClient({ env, fetchImpl });
+    await client.submitStudentChange({ studentId: 11278, changeType: 4 });
+    const { url, init } = dataCalls[0]!;
+    expect(url).toContain('/api/studentchange?');
+    expect(url).toContain('schoolCode=1183');
+    expect(url).toContain('parentMemberId=5');
+    expect(JSON.parse(init.body as string)).toMatchObject({ studentId: 11278, changeType: 4, modifiedBy: 5 });
+  });
+
+  it('deleteStudentChange issues a DELETE with the change series query', async () => {
+    const { fetchImpl, dataCalls } = scriptedFetch(() => new Response('{"ok":1}', { status: 200 }));
+    const client = new SchoolPassClient({ env, fetchImpl });
+    await client.deleteStudentChange({ changeSeriesId: 27074, changeType: 1, adType: 4, date: '2026-09-14' });
+    const { url, init } = dataCalls[0]!;
+    expect(init.method).toBe('DELETE');
+    expect(url).toContain('/api/studentchange/DeleteMobileChange?');
+    expect(url).toContain('ChangeSeriesId=27074');
+    expect(url).toContain('ADType=4');
+    expect(url).toContain('dt=2026-09-14');
+  });
+
   it('falls back to a full re-login when the refresh path is dead', async () => {
     let dataHits = 0;
     let usersHits = 0;

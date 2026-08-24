@@ -1,13 +1,13 @@
 # schoolpass-mcp
 
-MCP server for **SchoolPass** — read your child's school arrival & dismissal
-information from a parent account. Talks to the SchoolPass REST API used by the
+MCP server for **SchoolPass** — read AND change your child's school arrival &
+dismissal from a parent account. Talks to the SchoolPass REST API used by the
 SchoolPass web and mobile apps, authenticating server-side with your own parent
 email and password (no browser, no extension).
 
 > Developed and maintained by AI (Claude Code). Use at your own discretion.
 
-Parent-scoped and read-only in this release.
+Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 
 ## Tools
 
@@ -22,6 +22,8 @@ Parent-scoped and read-only in this release.
 | `schoolpass_list_pickup_changes` | Pickup/dismissal changes for a student on a date. |
 | `schoolpass_list_dismissal_locations` | The school's dismissal locations, with ids. |
 | `schoolpass_get_school_info` | Basic school info and per-school config. |
+| `schoolpass_submit_dismissal_change` | Submit a dismissal/arrival change (confirm-gated, dry-run preview). |
+| `schoolpass_cancel_dismissal_change` | Cancel a change, back to default (confirm-gated). |
 
 ## Configuration
 

@@ -183,6 +183,43 @@ export class SchoolPassClient {
   }
 
   /**
+   * Submit a student dismissal/arrival change (`POST studentchange`). The body
+   * shape mirrors the SchoolPass app's own `createSubmitPayload`; `parentMemberId`
+   * equals the body's `modifiedBy` (the parent member id), exactly as the app
+   * sends it. Returns the parsed response.
+   */
+  async submitStudentChange(body: Record<string, unknown>): Promise<unknown> {
+    const memberId = await this.getMemberId();
+    return this.post(ENDPOINTS.studentChange, { ...body, modifiedBy: memberId }, {
+      schoolCode: this.schoolCode,
+      parentMemberId: memberId,
+    });
+  }
+
+  /**
+   * Delete a previously-submitted change series (`DELETE
+   * studentchange/DeleteMobileChange`). Keyed on the `changeSeriesId` the
+   * calendar reports; `changeType`/`adType`/`dt` scope which occurrence to
+   * remove.
+   */
+  async deleteStudentChange(args: {
+    changeSeriesId: number;
+    changeType: number;
+    adType: number;
+    date: string;
+  }): Promise<unknown> {
+    return this.request('DELETE', ENDPOINTS.deleteStudentChange, {
+      query: {
+        schoolCode: this.schoolCode,
+        ChangeSeriesId: args.changeSeriesId,
+        ChangeType: args.changeType,
+        ADType: args.adType,
+        dt: args.date,
+      },
+    });
+  }
+
+  /**
    * Healthcheck: an unauthenticated `version` read (proves reachability + the
    * region host) followed by a session bootstrap (proves the credentials). Kept
    * separate so a connectivity problem is distinguishable from an auth problem.
