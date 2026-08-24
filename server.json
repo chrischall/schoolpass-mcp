@@ -1,0 +1,47 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.chrischall/schoolpass-mcp",
+  "description": "SchoolPass for Claude — students, arrival/dismissal calendar, pickup changes, and school info",
+  "repository": {
+    "url": "https://github.com/chrischall/schoolpass-mcp",
+    "source": "github"
+  },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "schoolpass-mcp",
+      "version": "0.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SCHOOLPASS_EMAIL",
+          "description": "Your SchoolPass parent account email address.",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "SCHOOLPASS_PASSWORD",
+          "description": "Your SchoolPass parent account password.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "SCHOOLPASS_SCHOOL_CODE",
+          "description": "The numeric school id (AppCode) SchoolPass uses to select your school.",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "SCHOOLPASS_API_HOST",
+          "description": "Optional regional API host override (default busapi-east16-ss.school-pass.net).",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

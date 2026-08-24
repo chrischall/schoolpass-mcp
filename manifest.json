@@ -1,0 +1,78 @@
+{
+  "manifest_version": "0.2",
+  "name": "schoolpass-mcp",
+  "display_name": "SchoolPass",
+  "version": "0.0.0",
+  "description": "SchoolPass parent tools — students, arrival/dismissal calendar, pickup changes, drivers, school info",
+  "long_description": "Talks to the SchoolPass REST API used by the SchoolPass web and mobile apps, authenticating with your own parent account email and password against your school's regional API host. Read tools cover your linked students, the parent profile, authorized pickup drivers, each student's arrival & dismissal calendar, pending pickup changes, the school's dismissal locations, and basic school info. Parent-scoped and read-only in this release.",
+  "author": {
+    "name": "Claude Code (AI)",
+    "url": "https://www.anthropic.com/claude"
+  },
+  "homepage": "https://github.com/chrischall/schoolpass-mcp",
+  "documentation": "https://github.com/chrischall/schoolpass-mcp#readme",
+  "support": "https://github.com/chrischall/schoolpass-mcp/issues",
+  "license": "MIT",
+  "keywords": [
+    "schoolpass",
+    "school",
+    "dismissal",
+    "carpool",
+    "parent",
+    "mcp"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/bundle.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/dist/bundle.js"
+      ],
+      "env": {
+        "SCHOOLPASS_EMAIL": "${user_config.schoolpass_email}",
+        "SCHOOLPASS_PASSWORD": "${user_config.schoolpass_password}",
+        "SCHOOLPASS_SCHOOL_CODE": "${user_config.schoolpass_school_code}",
+        "SCHOOLPASS_API_HOST": "${user_config.schoolpass_api_host}"
+      }
+    }
+  },
+  "user_config": {
+    "schoolpass_email": {
+      "type": "string",
+      "title": "SchoolPass account email",
+      "description": "The email address you sign in to your school's SchoolPass portal with.",
+      "required": true
+    },
+    "schoolpass_password": {
+      "type": "string",
+      "title": "SchoolPass account password",
+      "description": "Your SchoolPass account password. Stored by the host, sent only to SchoolPass's login endpoint.",
+      "sensitive": true,
+      "required": true
+    },
+    "schoolpass_school_code": {
+      "type": "string",
+      "title": "School id (school code)",
+      "description": "The numeric school id SchoolPass uses (the AppCode / appCode value; e.g. 1183 for Scholars Academy).",
+      "required": true
+    },
+    "schoolpass_api_host": {
+      "type": "string",
+      "title": "Regional API host (optional)",
+      "description": "Override the regional API host if your school is on a different shard (default busapi-east16-ss.school-pass.net).",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=22.5.0"
+    }
+  }
+}

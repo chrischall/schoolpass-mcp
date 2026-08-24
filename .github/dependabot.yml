@@ -1,0 +1,40 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Listed FIRST: vitest and @vitest/coverage-v8 peer-depend at an exact
+      # version, so a lone major bump of either makes npm ci unsatisfiable and
+      # BOTH halves fail CI. Grouping them (incl. majors) keeps the pair in lock-step.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - major
+          - minor
+          - patch
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch

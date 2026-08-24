@@ -1,0 +1,22 @@
+{
+  "name": "schoolpass",
+  "displayName": "SchoolPass",
+  "version": "0.0.0",
+  "description": "SchoolPass parent tools for Claude — students, arrival/dismissal calendar, pickup changes, drivers, and school info via MCP",
+  "author": {
+    "name": "Chris Chall"
+  },
+  "homepage": "https://github.com/chrischall/schoolpass-mcp",
+  "repository": "https://github.com/chrischall/schoolpass-mcp",
+  "license": "MIT",
+  "keywords": [
+    "schoolpass",
+    "school",
+    "dismissal",
+    "carpool",
+    "parent",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcp": "./.mcp.json"
+}

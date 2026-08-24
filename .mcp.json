@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "schoolpass": {
+      "command": "npx",
+      "args": ["-y", "schoolpass-mcp"],
+      "env": {
+        "SCHOOLPASS_EMAIL": "${SCHOOLPASS_EMAIL}",
+        "SCHOOLPASS_PASSWORD": "${SCHOOLPASS_PASSWORD}",
+        "SCHOOLPASS_SCHOOL_CODE": "${SCHOOLPASS_SCHOOL_CODE}"
+      }
+    }
+  }
+}

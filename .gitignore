@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.env
+*.skill
+*.mcpb
+*.tsbuildinfo
+.claude/worktrees/
+
+# Network captures — routinely carry session cookies and auth headers even
+# when nominally "sanitized". Shapes belong in docs/SCHOOLPASS-API.md; captures never
+# get committed.
+*.har
+*.jsonl
+*.curl
+
