@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "schoolpass-mcp",
   "display_name": "SchoolPass",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "SchoolPass parent tools — students, arrival/dismissal calendar, pickup changes, drivers, school info",
   "long_description": "Talks to the SchoolPass REST API used by the SchoolPass web and mobile apps, authenticating with your own parent account email and password against your school's regional API host. Read tools cover your linked students, the parent profile, authorized pickup drivers, each student's arrival & dismissal calendar, pending pickup changes, the school's dismissal locations, and basic school info. Parent-scoped and read-only in this release.",
   "author": {
