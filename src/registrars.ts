@@ -7,16 +7,18 @@
  * roster against the same array the entry point uses, so the two can't drift.
  *
  * Order is cosmetic (it only sets registration order) but reads as the setup
- * story: prove you're connected, look at your students, then at their schedule.
+ * story: prove you're connected, look at your students, then at their schedule,
+ * then change it.
  *
- * This surface is parent-scoped and read-only. The one meaningful parent write
- * — submitting an alternate pickup / dismissal change — is intentionally absent
- * until its request body is verified against a real successful change; it will
- * arrive as a `confirm`-gated tool with a dry-run preview.
+ * The surface is parent-scoped. All tools are read-only except the single
+ * `confirm`-gated write (`schoolpass_submit_dismissal_change`), whose body shape
+ * is derived from the SchoolPass app's own request and returns a dry-run preview
+ * unless `confirm: true`.
  */
 
 import type { ToolRegistrar } from '@chrischall/mcp-utils';
 import type { SchoolPassClient } from './client.js';
+import { registerChangeTools } from './tools/changes.js';
 import { registerDismissalTools } from './tools/dismissal.js';
 import { registerParentTools } from './tools/parent.js';
 import { registerSessionTools } from './tools/session.js';
@@ -25,4 +27,5 @@ export const TOOL_REGISTRARS: ToolRegistrar<SchoolPassClient>[] = [
   registerSessionTools,
   registerParentTools,
   registerDismissalTools,
+  registerChangeTools,
 ];

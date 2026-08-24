@@ -14,6 +14,8 @@ const EXPECTED_TOOLS = [
   'schoolpass_list_pickup_changes',
   'schoolpass_list_dismissal_locations',
   'schoolpass_get_school_info',
+  'schoolpass_submit_dismissal_change',
+  'schoolpass_cancel_dismissal_change',
 ].sort();
 
 /** Apply every registrar with a no-credential client (registration does no I/O). */

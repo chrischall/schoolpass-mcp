@@ -98,3 +98,34 @@ sp_curl GET "Config/configsettings?schoolCode=${SCHOOLPASS_SCHOOL_CODE}"
   admin-only). Expected — not a login problem.
 - The `jq` field paths above follow the Swagger shapes; if the live check shows a
   different envelope on your account, adjust the paths and update this file.
+
+## Writes (verified live)
+
+Submit a dismissal/arrival change — `POST studentchange`. The body must match the
+app exactly: `dateSet.dates` EMPTY, `daysOfWeek` as NUMERIC ids (Monday=1…Sunday=7),
+`modifiedBy` = your parent member id (= `parentMemberId`), `changeType` from the E2
+enum (Absent=1, LateArrival=2, EarlyDismissal=3, Carpool=4, Activity=5, Bus=6).
+
+```bash
+STU=11278; DATE=2026-09-14; DOW=1   # DOW: Mon=1..Sun=7 for $DATE
+sp_curl POST "studentchange?schoolCode=${SCHOOLPASS_SCHOOL_CODE}&parentMemberId=${SP_MEMBER_ID}" "$(jq -nc \
+  --argjson sid "$STU" --arg date "$DATE" --argjson dow "$DOW" --argjson mid "$SP_MEMBER_ID" '{
+    studentId:$sid, moveToId:null, busStopId:null,
+    dateSet:{dates:[], daysOfWeek:[$dow], startDate:$date, endDate:$date, recurringWeeks:0},
+    notes:"", pickupDropoffPerson:null, willReturn:false, timeOfDay:null,
+    changeSeriesId:0, changeType:1, adType:3, userType:3, modifiedBy:$mid }')"
+# Verify: re-read the calendar; a non-default entry (isDefault:false, changeSeriesId set) appears.
+sp_curl GET "Student/StudentCalendar?schoolCode=${SCHOOLPASS_SCHOOL_CODE}&studentId=${STU}&startDate=${DATE}&endDate=${DATE}" | jq '.dailyList'
+```
+
+Cancel a change — `DELETE studentchange/DeleteMobileChange`, keyed on the
+`changeSeriesId` from the calendar:
+
+```bash
+CSID=27074   # from the calendar entry's changeSeriesId
+sp_curl DELETE "studentchange/DeleteMobileChange?schoolCode=${SCHOOLPASS_SCHOOL_CODE}&ChangeSeriesId=${CSID}&ChangeType=1&ADType=4&dt=${DATE}"
+```
+
+- `moveToId` for a Carpool move (changeType 4) is a **carpool id**; moving to the
+  carpool the student is already in returns 500.
+- A 2xx is not proof — re-read the calendar to confirm the change (or its removal).

@@ -67,6 +67,36 @@ export enum AuthType {
 export const AUTH_TYPE_CREDENTIALS = 'Credentials';
 
 /**
+ * `StudentChangeType` — the kind of dismissal/arrival change (int32-backed).
+ * The values are what the calendar reports (`studentChangeType`) and what a
+ * `studentchange` write sends as `changeType`. Verified against the live
+ * calendar (a default carpool reads `studentChangeType: 4`).
+ */
+export enum StudentChangeType {
+  NA = 0,
+  Absent = 1,
+  LateArrival = 2,
+  EarlyDismissal = 3,
+  Carpool = 4,
+  Activity = 5,
+  Bus = 6,
+  Virtual = 7,
+}
+
+/**
+ * `ArrivalDeparture` (`adType`) — which side of the day a change applies to.
+ * The calendar reports `adType: 2` (Arrival) and `adType: 3` (Departure)
+ * entries for the same day; a dismissal change is `Departure`.
+ */
+export enum AdType {
+  NA = 0,
+  Neither = 1,
+  Arrival = 2,
+  Departure = 3,
+  Both = 4,
+}
+
+/**
  * Endpoint paths used by this server, relative to {@link apiBaseUrl}. Auth
  * paths are unversioned; most data endpoints are unversioned `Controller`
  * routes, a few are `v2/...`. Only the parent-reachable subset is listed.
@@ -86,6 +116,8 @@ export const ENDPOINTS = {
   pickupChangesSince: 'PickupChange/GetChangesSince',
   dismissalLocations: 'dismissal/getDismissalLocations',
   schoolInfoBasic: 'SchoolInfo/GetBasicSchoolInfo',
+  studentChange: 'studentchange',
+  deleteStudentChange: 'studentchange/DeleteMobileChange',
 } as const;
 
 /**

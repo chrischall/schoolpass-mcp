@@ -93,11 +93,55 @@ exposes far more (visitor management, carline ops, reports, bus routing), but a
 parent token returns `403` for the admin-only routes, so only the subset above
 is surfaced.
 
-## Writes — deferred until verified
+## Writes — verified live
 
-The one meaningful parent write is submitting an alternate pickup / dismissal
-change (`PickupChange/addEarlyPickup`, `addLateArrival`, `moveStudentToCarpool`,
-`revertToCarpool`, or `StudentChange/AddMobileChange`). It mutates a child's real
-dismissal, so its exact request body must be verified against a **real successful
-change** before it ships — and it will be `confirm`-gated with a dry-run preview.
-Not implemented in this release.
+Submitting and cancelling a dismissal/arrival change is verified end-to-end
+against the live account (a MarkAsAbsent change was created, read back, and
+deleted, restoring the day to default).
+
+**Submit — `POST studentchange`** (query `schoolCode`, `parentMemberId`). Body
+mirrors the app's own `createSubmitPayload` exactly:
+
+```jsonc
+{
+  "studentId": 11278,
+  "moveToId": null,            // target carpool/location id; null for absent
+  "busStopId": null,
+  "dateSet": {
+    "dates": [],               // ALWAYS EMPTY — populating it 500s
+    "daysOfWeek": [1],         // NUMERIC ids, Monday=1 … Sunday=7 — a string ("Monday") 500s
+    "startDate": "2026-09-14",
+    "endDate": "2026-09-14",
+    "recurringWeeks": 0
+  },
+  "notes": "",
+  "pickupDropoffPerson": null,
+  "willReturn": false,
+  "timeOfDay": null,
+  "changeSeriesId": 0,
+  "changeType": 1,             // E2 enum: Absent=1, LateArrival=2, EarlyDismissal=3, Carpool=4, Activity=5, Bus=6
+  "adType": 3,                 // app inits adType to Departure(3); server may normalize (absent stored as Both=4)
+  "userType": 3,
+  "modifiedBy": 15348          // parent member id (user.internalId); MUST be present, and equals parentMemberId
+}
+```
+
+Traps, each observed live:
+- `modifiedBy` (= the parent's `user.internalId`) is required and must equal the
+  `parentMemberId` query param — omitting it 500s.
+- `dateSet.dates` must be **empty**; the day is selected by the single-day
+  `startDate`/`endDate` range filtered by `daysOfWeek`. An empty `daysOfWeek`
+  400s ("Date range does not produce any dates"); a populated `dates` 500s.
+- `daysOfWeek` entries are **numeric day ids** (Monday=1 … Sunday=7), not the
+  string names the Swagger enum implies.
+- `moveToId` for a Carpool move is a **carpool id** (not a dismissal location
+  id), and moving to the carpool the student is already in 500s.
+- A `200`/`true` is not proof — re-read `Student/StudentCalendar` for the date
+  and confirm a non-default entry (`isDefault:false`, a populated `changeSeriesId`)
+  appeared. The submit tool does this automatically.
+
+**Cancel — `DELETE studentchange/DeleteMobileChange`** (query `schoolCode`,
+`ChangeSeriesId`, `ChangeType`, `ADType`, `dt`). Keyed on the `changeSeriesId`
+the calendar reports for the change. Verified: deleting the created change
+restored the day to all-default. (`PickupChange/revertToCarpool` returns 500 for
+this account and is not used.)
