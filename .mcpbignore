@@ -41,6 +41,7 @@ CLAUDE.md
 
 # Registry / plugin / skill manifests (not used at runtime)
 server.json
+mint.yaml
 .claude-plugin/
 .mcp.json
 SKILL.md
