@@ -1,0 +1,36 @@
+# How this MCP wants to be hosted on mcp-host (docs/HOSTING-MANIFEST.md there).
+# A PROPOSAL, read at the pinned source and shown to an owner in the register
+# wizard — it applies nothing on its own and carries no secret value.
+#
+# NOTE: mcp-host's current reader (HOSTING_MANIFEST_FILE) reads `mcp-host.yaml`.
+# This file is named `mint.yaml` per project convention; point the reader at it
+# (or symlink/rename) for hosting to pick it up.
+#
+# schoolpass-mcp is hostable: it authenticates with a real server-side login
+# (email + password -> bearer + refresh token, no MFA), so a hosted child can
+# re-login from the stored secrets whenever its token expires. It keeps nothing
+# on disk (no dataDir), shells out to nothing (no dependencies), authenticates
+# as the configured account rather than per-caller (no perUserChild/auth), and
+# ships a single bin (no command.bin).
+version: 1
+name: SchoolPass
+slug: schoolpass
+summary: A parent's SchoolPass students, arrival/dismissal calendar, pickup changes, drivers, and confirm-gated dismissal-change writes.
+env:
+  - name: SCHOOLPASS_EMAIL
+    secret: true
+    required: true
+    help: Your SchoolPass parent account email.
+  - name: SCHOOLPASS_PASSWORD
+    secret: true
+    required: true
+    help: Your SchoolPass parent account password. Stored as a secret so the hosted child can re-login when its bearer token expires.
+  - name: SCHOOLPASS_SCHOOL_CODE
+    required: true
+    help: Your numeric school id — the AppCode / appCode value the app uses (e.g. 1183 for Scholars Academy). Not a secret.
+  - name: SCHOOLPASS_API_HOST
+    required: false
+    help: Regional API host override. Defaults to busapi-east16-ss.school-pass.net; set it to your school's shard if it is on a different region.
+# No egress allowlist: the API host is region-sharded and configurable
+# (SCHOOLPASS_API_HOST), so no single busapi-<region>-ss.school-pass.net host is
+# true for every school. Egress is only enforced on the isolated tier anyway.
