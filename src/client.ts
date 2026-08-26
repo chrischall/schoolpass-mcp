@@ -30,6 +30,11 @@ import {
   sendRequest,
   type FetchLike,
 } from './protocol.js';
+import {
+  createSessionCache,
+  tokenView,
+  reportCacheWriteFailure,
+} from './session-cache.js';
 
 /** Query params: strings, numbers, booleans, or arrays thereof; `undefined` dropped. */
 export type QueryParams = Record<
@@ -96,11 +101,29 @@ export class SchoolPassClient {
     if (!this.bootstrapInFlight) {
       const config = this.requireConfig();
       this.bootstrapInFlight = (async () => {
-        const { identity, tokens } = await login(config, this.fetchImpl);
+        // A cached session carries BOTH halves. Restoring only the tokens would
+        // skip the login and then crash on the first parent-scoped call, since
+        // getMemberId() reads `this.identity!.userId` behind a non-null
+        // assertion — so a record without the identity is not usable at all.
+        const cache = createSessionCache(config);
+        const restored = cache?.load() ?? null;
+        const { identity, tokens } = restored ?? (await login(config, this.fetchImpl));
         this.identity = identity;
         this.currentAccessToken = tokens.accessToken;
+        if (restored === null && cache !== null) {
+          try {
+            cache.save({ identity, tokens });
+          } catch (err) {
+            reportCacheWriteFailure(err);
+          }
+        }
         this.tokens = new TokenManager({
           initial: tokens,
+          // The manager persists after every refresh, which is what stops the
+          // cached copy going stale — through a view that re-attaches the
+          // identity, so one file always holds a complete session.
+          persistence: tokenView(cache, identity) ?? undefined,
+          onPersistError: reportCacheWriteFailure,
           refresh: async (rt) => {
             const next = await refreshTokens(config, this.currentAccessToken, rt, this.fetchImpl);
             this.currentAccessToken = next.accessToken;
