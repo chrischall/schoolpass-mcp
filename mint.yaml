@@ -31,6 +31,22 @@ env:
   - name: SCHOOLPASS_API_HOST
     required: false
     help: Regional API host override. Defaults to busapi-east16-ss.school-pass.net; set it to your school's shard if it is on a different region.
+  - name: SCHOOLPASS_SESSION_CACHE
+    required: false
+    help: Set to false to disable the on-disk session cache and log in on every process start. Defaults to enabled.
+  - name: SCHOOLPASS_SESSION_FILE
+    required: false
+    help: Absolute path for the session cache file. Defaults to $MCP_DATA_DIR/.schoolpass-mcp/session.json.
+
+state:
+  dataDir: true
+  reason: >-
+    Caches the signed-in session at $MCP_DATA_DIR/.schoolpass-mcp/session.json
+    (0600) — the token pair AND the parent identity the API is scoped to, since
+    a token alone cannot serve a parent-scoped call. Without it every cold start
+    re-runs the login, and a hosted child idles out after ten minutes, so that
+    is most starts.
+
 # No egress allowlist: the API host is region-sharded and configurable
 # (SCHOOLPASS_API_HOST), so no single busapi-<region>-ss.school-pass.net host is
 # true for every school. Egress is only enforced on the isolated tier anyway.
