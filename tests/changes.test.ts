@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
 import type { SchoolPassClient } from '../src/client.js';
+import { AdType, StudentChangeType } from '../src/protocol.js';
 import { registerChangeTools, buildChangeBody, dayOfWeekId } from '../src/tools/changes.js';
 
 describe('dayOfWeekId', () => {
@@ -58,11 +59,33 @@ function fakeClient(opts: { afterChanges?: boolean } = {}): {
     },
     async get(_path: string) {
       // Calendar read: return a different shape once a submit happened.
+      // Shaped like the real calendar entry docs/SCHOOLPASS-API.md describes:
+      // the proof of a landed change is a non-default entry with a populated
+      // changeSeriesId, and the tool matches it against the change it asked
+      // for — so studentChangeType/moveToId must be present and correct.
       return {
         dailyList:
           submitted && opts.afterChanges !== false
-            ? [{ isDefault: false, changeId: 99, moveToId: 505 }]
-            : [{ isDefault: true, changeId: null, moveToId: 8553 }],
+            ? [
+                {
+                  isDefault: false,
+                  changeId: 99,
+                  changeSeriesId: 4242,
+                  studentChangeType: StudentChangeType.Carpool,
+                  adType: AdType.Departure,
+                  moveToId: 505,
+                },
+              ]
+            : [
+                {
+                  isDefault: true,
+                  changeId: null,
+                  changeSeriesId: null,
+                  studentChangeType: StudentChangeType.Carpool,
+                  adType: AdType.Departure,
+                  moveToId: 8553,
+                },
+              ],
       };
     },
   } as unknown as SchoolPassClient;
@@ -134,7 +157,24 @@ describe('schoolpass_submit_dismissal_change', () => {
       },
       async get() {
         reads += 1;
-        return reads === 1 ? undefined : { dailyList: [{ isDefault: false, changeId: 7 }] };
+        // The after-read must carry the documented proof shape (non-default +
+        // populated changeSeriesId, matching the submitted change_type), or the
+        // landed check correctly refuses it — this test is about the missing
+        // dailyList on the FIRST read, not about the verification.
+        return reads === 1
+          ? undefined
+          : {
+              dailyList: [
+                {
+                  isDefault: false,
+                  changeId: 7,
+                  changeSeriesId: 77,
+                  studentChangeType: StudentChangeType.Absent,
+                  adType: AdType.Departure,
+                  moveToId: null,
+                },
+              ],
+            };
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
@@ -148,6 +188,82 @@ describe('schoolpass_submit_dismissal_change', () => {
     );
     expect(res.submitted).toBe(true);
     expect(res.before).toEqual([]);
+    await h.close();
+  });
+
+  it('reports alreadyInPlace instead of failing an idempotent re-submit', async () => {
+    // The requested change is ALREADY on the day, so nothing moves. A
+    // before/after diff would call that a failed write; the documented proof is
+    // the presence of a matching non-default entry, which holds.
+    const entry = {
+      isDefault: false,
+      changeId: 9,
+      changeSeriesId: 4242,
+      studentChangeType: StudentChangeType.Carpool,
+      adType: AdType.Departure,
+      moveToId: 505,
+    };
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() { return 15348; },
+      async submitStudentChange() { return { success: true }; },
+      async get() { return { dailyList: [entry] }; },
+    } as unknown as SchoolPassClient;
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = parseToolResult<{ submitted: boolean; alreadyInPlace: boolean }>(
+      await h.callTool('schoolpass_submit_dismissal_change', {
+        student_id: 11278, date: '2026-09-14', change_type: 'carpool',
+        move_to_id: 505, confirm: true,
+      }),
+    );
+    expect(res.submitted).toBe(true);
+    expect(res.alreadyInPlace).toBe(true);
+    await h.close();
+  });
+
+  it('still fails when the day changes but not into the requested state', async () => {
+    // A diff-based check would pass this: before !== after. The change that
+    // appeared is a DIFFERENT type, so the requested write did not land.
+    let submitted = false;
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() { return 15348; },
+      async submitStudentChange() { submitted = true; return { success: true }; },
+      async get() {
+        return {
+          dailyList: submitted
+            ? [{ isDefault: false, changeId: 1, changeSeriesId: 1, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }]
+            : [{ isDefault: true, changeId: null, changeSeriesId: null, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: 8553 }],
+        };
+      },
+    } as unknown as SchoolPassClient;
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505, confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    await h.close();
+  });
+
+  it('requires move_to_id for a carpool change', async () => {
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'carpool', confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    expect(submits).toHaveLength(0); // refused BEFORE any write
+    await h.close();
+  });
+
+  it('passes bus_stop_id through to the request body', async () => {
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'bus',
+      move_to_id: 61, bus_stop_id: 909, confirm: true,
+    });
+    expect((submits[0] as { busStopId?: number }).busStopId).toBe(909);
     await h.close();
   });
 
@@ -252,6 +368,47 @@ describe('schoolpass_cancel_dismissal_change', () => {
     );
     expect(res.cancelled).toBe(true);
     expect(res.cleared).toBe(false);
+    await h.close();
+  });
+});
+
+describe('schoolpass_cancel_dismissal_change targeting', () => {
+  const cancelClient = (entries: unknown[], onDelete?: (a: unknown) => void) =>
+    ({
+      schoolCode: 1183,
+      async getMemberId() { return 15348; },
+      async deleteStudentChange(a: unknown) { onDelete?.(a); return { ok: true }; },
+      async get() { return { dailyList: entries }; },
+    } as unknown as SchoolPassClient);
+
+  it('refuses to guess when the date carries several changes', async () => {
+    const client = cancelClient([{ isDefault: false, changeId: 11, changeSeriesId: 11, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: null }, { isDefault: false, changeId: 22, changeSeriesId: 22, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }]);
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = await h.callTool('schoolpass_cancel_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    await h.close();
+  });
+
+  it('cancels the change_series_id it was given', async () => {
+    let deleted: { changeSeriesId?: number } | undefined;
+    const client = cancelClient([{ isDefault: false, changeId: 11, changeSeriesId: 11, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: null }, { isDefault: false, changeId: 22, changeSeriesId: 22, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }], (a) => { deleted = a as typeof deleted; });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    await h.callTool('schoolpass_cancel_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_series_id: 22, confirm: true,
+    });
+    expect(deleted?.changeSeriesId).toBe(22);
+    await h.close();
+  });
+
+  it('errors when the given change_series_id is not on that date', async () => {
+    const client = cancelClient([{ isDefault: false, changeId: 11, changeSeriesId: 11, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: null }]);
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = await h.callTool('schoolpass_cancel_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_series_id: 999, confirm: true,
+    });
+    expect(res.isError).toBe(true);
     await h.close();
   });
 });

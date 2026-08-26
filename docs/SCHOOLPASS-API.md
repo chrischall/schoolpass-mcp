@@ -138,10 +138,23 @@ Traps, each observed live:
   id), and moving to the carpool the student is already in 500s.
 - A `200`/`true` is not proof — re-read `Student/StudentCalendar` for the date
   and confirm a non-default entry (`isDefault:false`, a populated `changeSeriesId`)
-  appeared. The submit tool does this automatically.
+  appeared. The submit tool does this automatically, and matches the entry
+  against the `changeType`/`moveToId` it asked for: a plain before/after diff
+  would call an idempotent re-submit a failed write (nothing moves because the
+  day is already in the requested state) while passing a write that landed as
+  some *other* change. The tool reports that no-op case as `alreadyInPlace`.
+- `busStopId` is sent on every submit (the app does the same) but **no Bus
+  change has been captured live**, so whether a bus move requires a stop id, and
+  what id space it uses, is UNVERIFIED. The `bus_stop_id` tool argument passes
+  straight through; treat a bus move as unproven until one is captured.
+- `moveToId` is enforced by the submit tool for `carpool` and `bus` — the two
+  the notes above name explicitly. `activity` is left optional because no
+  capture confirms it needs one, and a wrong refusal is as bad as a wrong write.
 
 **Cancel — `DELETE studentchange/DeleteMobileChange`** (query `schoolCode`,
 `ChangeSeriesId`, `ChangeType`, `ADType`, `dt`). Keyed on the `changeSeriesId`
-the calendar reports for the change. Verified: deleting the created change
+the calendar reports for the change. A date can carry more than one change, so
+the cancel tool takes an optional `change_series_id` and REFUSES an ambiguous
+date rather than deleting whichever entry happens to come first. Verified: deleting the created change
 restored the day to all-default. (`PickupChange/revertToCarpool` returns 500 for
 this account and is not used.)

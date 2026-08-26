@@ -122,7 +122,19 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           .int()
           .positive()
           .optional()
-          .describe('Target dismissal location id (schoolpass_list_dismissal_locations) or carpool id. Required for carpool/bus/location moves.'),
+          .describe(
+            'Target dismissal location id (schoolpass_list_dismissal_locations) or carpool id. ' +
+              'Required for carpool and bus moves (enforced); supply it for activity/location moves too.',
+          ),
+        bus_stop_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'Bus stop id for a bus move. The app sends this field on every submit, but no bus ' +
+              'change has been captured live, so its effect is UNVERIFIED — see docs/SCHOOLPASS-API.md.',
+          ),
         notes: z.string().optional().describe('Optional note attached to the change.'),
         pickup_dropoff_person: z.string().optional().describe('Optional name of the person picking up / dropping off.'),
         will_return: z.boolean().optional().describe('Whether the student will return the same day (for early dismissal).'),
@@ -134,6 +146,20 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       },
     },
     async (args) => {
+      // The description promises move_to_id is required for these; enforce it
+      // here rather than letting the server 500 or, worse, silently store a
+      // move with no target. Only the two the captured docs name explicitly are
+      // enforced — `activity` is left optional because no capture confirms it
+      // needs one, and a wrong refusal is as bad as a wrong write.
+      if ((args.change_type === 'carpool' || args.change_type === 'bus') && args.move_to_id == null) {
+        throw new McpToolError(`move_to_id is required for a ${args.change_type} change.`, {
+          hint:
+            args.change_type === 'carpool'
+              ? 'Pass the carpool id (from the student calendar\'s moveToId) — for a carpool move this is a carpool id, NOT a dismissal location id.'
+              : 'Pass the target id for the bus move (schoolpass_list_dismissal_locations).',
+        });
+      }
+
       const changeType = CHANGE_TYPES[args.change_type];
       const adType = AD_TYPES[args.ad_type];
       const body = buildChangeBody({
@@ -142,6 +168,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         changeType,
         adType,
         moveToId: args.move_to_id,
+        busStopId: args.bus_stop_id,
         notes: args.notes,
         pickupDropoffPerson: args.pickup_dropoff_person,
         willReturn: args.will_return,
@@ -168,23 +195,39 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           studentId: args.student_id,
           startDate: args.date,
           endDate: args.date,
-        })) as { dailyList?: unknown[] } | undefined;
+        })) as { dailyList?: ChangeEntry[] } | undefined;
         return cal?.dailyList ?? [];
       };
       const before = await readDay();
       const response = await client.submitStudentChange(body);
       const after = await readDay();
 
-      const landed = JSON.stringify(before) !== JSON.stringify(after);
+      // docs/SCHOOLPASS-API.md states the proof: "confirm a non-default entry
+      // (isDefault:false, a populated changeSeriesId) appeared". Verify by
+      // PRESENCE of the change we asked for, not by a before/after diff — a
+      // diff reports failure for an idempotent re-submit, where the day is
+      // already in the requested state and nothing moves. The diff is still
+      // reported, as `alreadyInPlace`, because "it was already like this" and
+      // "we just changed it" are different answers for a caller.
+      const requested = (e: ChangeEntry): boolean =>
+        e.isDefault === false &&
+        e.changeSeriesId != null &&
+        e.studentChangeType === changeType &&
+        (args.move_to_id == null || e.moveToId === args.move_to_id);
+      const landed = (after as ChangeEntry[]).some(requested);
       if (!landed) {
         throw new McpToolError(
-          'SchoolPass accepted the change (no error) but the calendar for that date did not change.',
+          'SchoolPass accepted the change (no error) but the requested change is not on the calendar for that date.',
           {
-            hint: 'The submit returned success but re-reading the day shows no new change — verify the student id, date, and move_to_id.',
+            hint:
+              'The submit returned success, but re-reading the day shows no non-default entry matching this change_type' +
+              (args.move_to_id != null ? ' and move_to_id' : '') +
+              ' — verify the student id, date, and move_to_id.',
           },
         );
       }
-      return jsonResult({ submitted: true, response, before, after });
+      const alreadyInPlace = JSON.stringify(before) === JSON.stringify(after);
+      return jsonResult({ submitted: true, alreadyInPlace, response, before, after });
     },
   );
 
@@ -200,13 +243,23 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       inputSchema: {
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date whose change should be cancelled (YYYY-MM-DD).'),
+        change_series_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'Which change to cancel, when the date carries more than one. Get it from the ' +
+              'student calendar (changeSeriesId) or from this tool\'s dry-run. Optional when the ' +
+              'date has exactly one cancellable change.',
+          ),
         confirm: z
           .boolean()
           .optional()
           .describe('Must be true to actually cancel. Without it, returns a preview only.'),
       },
     },
-    async ({ student_id, date, confirm }) => {
+    async ({ student_id, date, change_series_id, confirm }) => {
       const readDay = async () => {
         const cal = (await client.get(ENDPOINTS.studentCalendar, {
           schoolCode: client.schoolCode,
@@ -218,13 +271,40 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       };
 
       const before = await readDay();
-      const change = before.find(
-        (e) => e.isDefault === false && e.changeSeriesId != null,
-      );
-      if (!change) {
+      const cancellable = before.filter((e) => e.isDefault === false && e.changeSeriesId != null);
+      if (cancellable.length === 0) {
         throw new McpToolError(`No cancellable change found for student ${student_id} on ${date}.`, {
           hint: 'The date already shows only default entries — there is nothing to cancel.',
         });
+      }
+
+      let change: ChangeEntry;
+      if (change_series_id != null) {
+        const target = cancellable.find((e) => e.changeSeriesId === change_series_id);
+        if (!target) {
+          throw new McpToolError(
+            `No cancellable change with changeSeriesId ${change_series_id} for student ${student_id} on ${date}.`,
+            {
+              hint: `That date carries: ${cancellable
+                .map((e) => `${e.changeSeriesId} (type ${e.studentChangeType}, adType ${e.adType})`)
+                .join('; ')}.`,
+            },
+          );
+        }
+        change = target;
+      } else if (cancellable.length > 1) {
+        // Deleting "the first one" would be a coin flip against a child's real
+        // dismissal, so an ambiguous date is refused rather than guessed.
+        throw new McpToolError(
+          `Student ${student_id} has ${cancellable.length} cancellable changes on ${date} — say which one.`,
+          {
+            hint: `Pass change_series_id. Candidates: ${cancellable
+              .map((e) => `${e.changeSeriesId} (type ${e.studentChangeType}, adType ${e.adType})`)
+              .join('; ')}.`,
+          },
+        );
+      } else {
+        change = cancellable[0]!;
       }
 
       if (confirm !== true) {
@@ -248,7 +328,9 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         date,
       });
       const after = await readDay();
-      const cleared = !after.some((e) => e.isDefault === false && e.changeSeriesId != null);
+      // Scoped to the change we deleted: another change on the same day is
+      // not evidence this one survived.
+      const cleared = !after.some((e) => e.changeSeriesId === change.changeSeriesId);
       return jsonResult({ cancelled: true, cleared, response, before, after });
     },
   );
