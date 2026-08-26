@@ -3,10 +3,10 @@
  * pending pickup changes, the school's dismissal locations, and basic school
  * info. All read-only.
  *
- * The write side — submitting an alternate pickup / dismissal change — is
- * deliberately NOT here yet: it mutates a child's real dismissal, so its exact
- * request body must be verified against a real successful change before it is
- * shipped, and it will be `confirm`-gated with a dry-run preview when added.
+ * The write side — submitting and cancelling a dismissal change — lives in
+ * `./changes.ts`, not here: it mutates a child's real dismissal, so it is kept
+ * apart from these reads, is `confirm`-gated with a dry-run preview, and
+ * re-reads the day afterwards rather than trusting the submit's own success.
  */
 
 import { jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
