@@ -28,8 +28,8 @@
     "build": "tsc && npm run bundle",
     "bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --external:dotenv --banner:js='import { createRequire as __createRequire } from \"module\"; const require = __createRequire(import.meta.url);' --outfile=dist/bundle.js",
     "dev": "node --env-file=.env dist/index.js",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test": "npm run typecheck && vitest run",
+    "test:coverage": "npm run typecheck && vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
