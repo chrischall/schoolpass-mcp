@@ -1,5 +1,5 @@
 ---
-name: schoolpass-mcp
+name: schoolpass
 description: This skill should be used when the user asks about their child's school arrival/dismissal through a SchoolPass parent account. Triggers on phrases like "check SchoolPass", "when is my kid dismissed", "what's my dismissal default", "list my students in SchoolPass", "who are my pickup drivers", "any pickup changes today", "school dismissal locations", or any request to read a SchoolPass parent account.
 ---
 
