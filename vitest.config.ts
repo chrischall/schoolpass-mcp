@@ -6,6 +6,9 @@ import { configDefaults, defineConfig } from 'vitest/config';
 // coverage-free for fast local iteration.
 export default defineConfig({
   test: {
+    // Forces the session cache off and pins its path into a temp dir, so no
+    // test can reach the developer's real ~/.schoolpass-mcp — see tests/_setup.ts.
+    setupFiles: ['./tests/_setup.ts'],
     exclude: [
       ...configDefaults.exclude,
       // Nested checkouts of this same repo — agent worktrees under

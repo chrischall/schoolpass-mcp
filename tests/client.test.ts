@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SchoolPassClient } from '../src/client.js';
 import { SchoolPassApiError, type FetchLike } from '../src/protocol.js';
 import { SchoolPassConfigError } from '../src/config.js';
@@ -235,5 +238,34 @@ describe('SchoolPassClient.healthcheck', () => {
     const health = await client.healthcheck();
     expect(health.reachable).toBe(false);
     expect(health.authenticated).toBe(false);
+  });
+});
+
+describe('SchoolPassClient — session cache write failure', () => {
+  it('reports a failed cache write and still serves the request', async () => {
+    // A read-only or unwritable data dir must cost the NEXT start a login, not
+    // this request. Point the cache at a path whose parent is a file so every
+    // write fails.
+    const dir = mkdtempSync(join(tmpdir(), 'schoolpass-ro-'));
+    const blocker = join(dir, 'blocker');
+    writeFileSync(blocker, 'x');
+    const prevCache = process.env.SCHOOLPASS_SESSION_CACHE;
+    const prevFile = process.env.SCHOOLPASS_SESSION_FILE;
+    process.env.SCHOOLPASS_SESSION_CACHE = 'true';
+    process.env.SCHOOLPASS_SESSION_FILE = join(blocker, 'session.json');
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { fetchImpl } = scriptedFetch(() => new Response('{"ok":true}', { status: 200 }));
+      const client = new SchoolPassClient({ fetchImpl, env });
+      await expect(client.getMemberId()).resolves.toBeTypeOf('number');
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/could not cache/i));
+    } finally {
+      warn.mockRestore();
+      if (prevCache === undefined) delete process.env.SCHOOLPASS_SESSION_CACHE;
+      else process.env.SCHOOLPASS_SESSION_CACHE = prevCache;
+      if (prevFile === undefined) delete process.env.SCHOOLPASS_SESSION_FILE;
+      else process.env.SCHOOLPASS_SESSION_FILE = prevFile;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
