@@ -105,7 +105,11 @@ export class SchoolPassClient {
         // skip the login and then crash on the first parent-scoped call, since
         // getMemberId() reads `this.identity!.userId` behind a non-null
         // assertion — so a record without the identity is not usable at all.
-        const cache = createSessionCache(config);
+        // this.env, not process.env: the client takes an injected environment
+        // (resolveConfig already uses it), and reading the ambient one here made
+        // the cache ignore a caller's configuration — and let the test suite
+        // disable it through a channel the client was not actually consulting.
+        const cache = createSessionCache(config, this.env);
         const restored = cache?.load() ?? null;
         const { identity, tokens } = restored ?? (await login(config, this.fetchImpl));
         this.identity = identity;

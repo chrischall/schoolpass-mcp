@@ -7,6 +7,9 @@ import { SchoolPassApiError, type FetchLike } from '../src/protocol.js';
 import { SchoolPassConfigError } from '../src/config.js';
 
 const env = {
+  // Off by default here as well as in tests/_setup.ts: the client reads the
+  // INJECTED env, so the process.env guard in the setup file does not reach it.
+  SCHOOLPASS_SESSION_CACHE: 'false',
   SCHOOLPASS_EMAIL: 'parent@example.com',
   SCHOOLPASS_PASSWORD: 'secret',
   SCHOOLPASS_SCHOOL_CODE: '1183',
@@ -249,22 +252,119 @@ describe('SchoolPassClient — session cache write failure', () => {
     const dir = mkdtempSync(join(tmpdir(), 'schoolpass-ro-'));
     const blocker = join(dir, 'blocker');
     writeFileSync(blocker, 'x');
-    const prevCache = process.env.SCHOOLPASS_SESSION_CACHE;
-    const prevFile = process.env.SCHOOLPASS_SESSION_FILE;
-    process.env.SCHOOLPASS_SESSION_CACHE = 'true';
-    process.env.SCHOOLPASS_SESSION_FILE = join(blocker, 'session.json');
+    // Through the INJECTED env, not process.env: the client reads the env it
+    // was handed, so setting the ambient one would leave the cache disabled and
+    // the test would pass without ever reaching the write it claims to cover.
+    const cacheEnv = {
+      ...env,
+      SCHOOLPASS_SESSION_CACHE: 'true',
+      SCHOOLPASS_SESSION_FILE: join(blocker, 'session.json'),
+    };
     const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const { fetchImpl } = scriptedFetch(() => new Response('{"ok":true}', { status: 200 }));
-      const client = new SchoolPassClient({ fetchImpl, env });
+      const client = new SchoolPassClient({ fetchImpl, env: cacheEnv });
       await expect(client.getMemberId()).resolves.toBeTypeOf('number');
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/could not cache/i));
     } finally {
       warn.mockRestore();
-      if (prevCache === undefined) delete process.env.SCHOOLPASS_SESSION_CACHE;
-      else process.env.SCHOOLPASS_SESSION_CACHE = prevCache;
-      if (prevFile === undefined) delete process.env.SCHOOLPASS_SESSION_FILE;
-      else process.env.SCHOOLPASS_SESSION_FILE = prevFile;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('SchoolPassClient — session cache hit', () => {
+  /** A fetch that counts logins, so "did it skip the login" is observable. */
+  function countingFetch(): { fetchImpl: FetchLike; logins: () => number } {
+    let logins = 0;
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes('Auth/users')) {
+        logins += 1;
+        return new Response(JSON.stringify([{ userId: 5, userType: 3 }]), { status: 200 });
+      }
+      if (url.includes('Auth/token')) {
+        return new Response(
+          JSON.stringify({ access_token: jwt(futureExp()), refresh_token: 'r1' }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify([{ id: 1 }]), { status: 200 });
+    };
+    return { fetchImpl, logins: () => logins };
+  }
+
+  it('a second process restores the session and does not log in again', async () => {
+    // The whole point of the feature, asserted end to end rather than only
+    // through the cache module: the first client logs in and writes, the second
+    // reads that file and skips the login entirely.
+    const dir = mkdtempSync(join(tmpdir(), 'schoolpass-hit-'));
+    try {
+      const cacheEnv = {
+        ...env,
+        SCHOOLPASS_SESSION_CACHE: 'true',
+        SCHOOLPASS_SESSION_FILE: join(dir, 'session.json'),
+      };
+
+      const first = countingFetch();
+      const a = new SchoolPassClient({ fetchImpl: first.fetchImpl, env: cacheEnv });
+      expect(await a.getMemberId()).toBe(5);
+      expect(first.logins()).toBe(1);
+
+      // A fresh client is a fresh process for these purposes.
+      const second = countingFetch();
+      const b = new SchoolPassClient({ fetchImpl: second.fetchImpl, env: cacheEnv });
+      expect(await b.getMemberId()).toBe(5);
+      expect(second.logins()).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('restores the identity, not just the tokens', async () => {
+    // getMemberId() dereferences identity behind a non-null assertion, so a
+    // half-restored session would throw here rather than degrade.
+    const dir = mkdtempSync(join(tmpdir(), 'schoolpass-hit2-'));
+    try {
+      const cacheEnv = {
+        ...env,
+        SCHOOLPASS_SESSION_CACHE: 'true',
+        SCHOOLPASS_SESSION_FILE: join(dir, 'session.json'),
+      };
+      const first = countingFetch();
+      await new SchoolPassClient({ fetchImpl: first.fetchImpl, env: cacheEnv }).getMemberId();
+
+      const second = countingFetch();
+      const b = new SchoolPassClient({ fetchImpl: second.fetchImpl, env: cacheEnv });
+      await expect(b.getMemberId()).resolves.toBe(5);
+      expect(second.logins()).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('honours the INJECTED env, not the ambient one', async () => {
+    // The bug this covers: createSessionCache read process.env instead of the
+    // client's injected env, so a caller could not turn the cache off — and the
+    // suite was disabling it through a channel the client never consulted.
+    const dir = mkdtempSync(join(tmpdir(), 'schoolpass-env-'));
+    const prev = process.env.SCHOOLPASS_SESSION_CACHE;
+    try {
+      // Ambient says ON; the injected env says OFF. The injected one must win,
+      // so the second client logs in again.
+      process.env.SCHOOLPASS_SESSION_CACHE = 'true';
+      const cacheEnv = {
+        ...env,
+        SCHOOLPASS_SESSION_CACHE: 'false',
+        SCHOOLPASS_SESSION_FILE: join(dir, 'session.json'),
+      };
+      const first = countingFetch();
+      await new SchoolPassClient({ fetchImpl: first.fetchImpl, env: cacheEnv }).getMemberId();
+      const second = countingFetch();
+      await new SchoolPassClient({ fetchImpl: second.fetchImpl, env: cacheEnv }).getMemberId();
+      expect(second.logins()).toBe(1);
+    } finally {
+      if (prev === undefined) delete process.env.SCHOOLPASS_SESSION_CACHE;
+      else process.env.SCHOOLPASS_SESSION_CACHE = prev;
       rmSync(dir, { recursive: true, force: true });
     }
   });
