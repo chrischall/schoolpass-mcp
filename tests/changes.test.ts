@@ -256,6 +256,43 @@ describe('schoolpass_submit_dismissal_change', () => {
     await h.close();
   });
 
+  it('requires move_to_id for a bus change too', async () => {
+    // Covers the bus arm of the required-target hint, which names a different
+    // id source than the carpool arm.
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'bus', confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('fails a targetless change that never appears, without naming move_to_id', async () => {
+    // Same landed-check failure as above but with NO move_to_id, so the hint
+    // omits it — an `absent` change the calendar never reflects.
+    let submitted = false;
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() { return 15348; },
+      async submitStudentChange() { submitted = true; return { success: true }; },
+      async get() {
+        return {
+          dailyList: submitted
+            ? [{ isDefault: false, changeId: 1, changeSeriesId: 1, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: 505 }]
+            : [{ isDefault: true, changeId: null, changeSeriesId: null, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }],
+        };
+      },
+    } as unknown as SchoolPassClient;
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'absent', confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    await h.close();
+  });
+
   it('passes bus_stop_id through to the request body', async () => {
     const { client, submits } = fakeClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
