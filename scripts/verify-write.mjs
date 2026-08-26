@@ -32,6 +32,18 @@ d.setDate(d.getDate() + 21);
 while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
 const date = d.toISOString().slice(0, 10);
 
+// Shape-only summary: this script runs against a REAL child's calendar, so it
+// prints structure and ids rather than names, notes or free text — the same
+// posture scripts/live-check.mjs takes.
+const summarize = (entries) =>
+  (entries ?? []).map((e) => ({
+    changeTypeId: e.changeTypeId ?? null,
+    adType: e.adType ?? null,
+    moveToId: e.moveToId ?? null,
+    isDefault: e.isDefault ?? null,
+    changeSeriesId: e.changeSeriesId ?? null,
+  }));
+
 const readDay = async () => {
   const cal = await c.get('Student/StudentCalendar', {
     schoolCode: c.schoolCode, studentId: student.id, startDate: date, endDate: date,
@@ -39,9 +51,9 @@ const readDay = async () => {
   return cal?.dailyList ?? [];
 };
 
-log(`Verifying write for ${student.firstName} (id ${student.id}) on ${date}`);
+log(`Verifying write for student id ${student.id} on ${date}`);
 const pre = await readDay();
-log('PRE (default):', JSON.stringify(pre));
+log('PRE (default):', summarize(pre));
 
 // MarkAsAbsent — the app's default, target-less action. The app's adType
 // initializes to Departure (3) and stays there for absent.
@@ -56,7 +68,7 @@ const body = buildChangeBody({
 let ok = false;
 try {
   const res = await c.submitStudentChange(body);
-  log('SUBMIT 2xx:', JSON.stringify(res));
+  log('SUBMIT 2xx: response received:', res == null ? 'null' : typeof res);
   ok = true;
 } catch (e) {
   log('SUBMIT FAILED:', e.message);
@@ -64,7 +76,7 @@ try {
 
 const post = await readDay();
 const change = post.find((e) => e.isDefault === false || e.changeId != null || e.changeSeriesId != null);
-log('POST:', JSON.stringify(post));
+log('POST:', summarize(post));
 log('change recorded?', !!change);
 
 // Restore: delete the change series, then revert to carpool as a backstop.
