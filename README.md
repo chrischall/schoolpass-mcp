@@ -75,7 +75,7 @@ MCP process — see the bundled **`schoolpass-curl`** skill
 
 ```bash
 npm install
-npm test            # unit + boot tests
+npm test            # tsc typecheck + unit + boot tests
 npm run build       # tsc + esbuild bundle
 node --env-file=.env scripts/live-check.mjs   # live read-only check (needs .env)
 ```
