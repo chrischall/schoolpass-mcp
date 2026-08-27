@@ -40,6 +40,18 @@
           "description": "Optional regional API host override (default busapi-east16-ss.school-pass.net).",
           "isRequired": false,
           "format": "string"
+        },
+        {
+          "name": "SCHOOLPASS_SESSION_CACHE",
+          "description": "Set to false to disable the on-disk session cache and re-authenticate on every process start. Defaults to enabled.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SCHOOLPASS_SESSION_FILE",
+          "description": "Absolute path for the session cache file. Defaults to $MCP_DATA_DIR/.schoolpass-mcp/session.json.",
+          "isRequired": false,
+          "format": "string"
         }
       ]
     }
