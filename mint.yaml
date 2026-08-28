@@ -47,6 +47,19 @@ state:
     re-runs the login, and a hosted child idles out after ten minutes, so that
     is most starts.
 
-# No egress allowlist: the API host is region-sharded and configurable
-# (SCHOOLPASS_API_HOST), so no single busapi-<region>-ss.school-pass.net host is
-# true for every school. Egress is only enforced on the isolated tier anyway.
+egress:
+  allow:
+    # Only hosts the SERVER process actually fetches. Hosts that appear
+    # solely in a URL this server BUILDS and returns are excluded.
+    #
+    # The SchoolPass regional REST API — the ONLY host the server contacts:
+    # login (POST /api/auth/users, /api/auth/token), the token refresh, the
+    # version probe and every parent read/write all go here. It answers
+    # directly (no apex->www hop to list).
+    - busapi-east16-ss.school-pass.net
+    #
+    # NOTE — the API is region-sharded and the host is ENV-SELECTED: a
+    # registration that sets SCHOOLPASS_API_HOST to another
+    # busapi-<region>-ss.school-pass.net shard must list THAT host here
+    # instead, or the fence blocks every call. The default above is the
+    # only shard true for a registration that leaves the override unset.
