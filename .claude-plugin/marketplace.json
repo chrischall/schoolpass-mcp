@@ -2,7 +2,7 @@
   "name": "schoolpass",
   "metadata": {
     "description": "SchoolPass parent tools for Claude — authenticates with your own parent account against the SchoolPass REST API used by the SchoolPass web and mobile apps",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "owner": {
     "name": "Chris Chall",
@@ -13,7 +13,7 @@
       "name": "schoolpass",
       "source": "./",
       "description": "Students, arrival/dismissal calendar, pending pickup changes, authorized drivers, dismissal locations, and school info for a parent account",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Chris Chall"
       },
