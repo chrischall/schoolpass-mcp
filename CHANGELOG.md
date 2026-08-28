@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/chrischall/schoolpass-mcp/compare/v0.3.0...v0.3.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **egress:** declare every host the server dials in mint.yaml ([#18](https://github.com/chrischall/schoolpass-mcp/issues/18)) ([38bfafd](https://github.com/chrischall/schoolpass-mcp/commit/38bfafd07f90a7e5ccc7b61e2f602caff9295855))
+
 ## [0.3.0](https://github.com/chrischall/schoolpass-mcp/compare/v0.2.0...v0.3.0) (2026-08-27)
 
 
