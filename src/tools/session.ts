@@ -4,6 +4,18 @@
  * the server authenticated as.
  *
  * Both are read-only and take no `confirm` gate.
+ *
+ * **Neither takes `view`, and that is deliberate rather than an oversight in
+ * the compact rollout.** Every other read tool here hands back a SchoolPass
+ * payload whose shape nobody has captured, which is exactly what `view` exists
+ * for. These two do not: their responses are assembled HERE from a fixed list
+ * of named scalars — `reachable`/`authenticated`/`identity` and
+ * `memberId`/`userType`/`name`/`email`. The one value that comes off the wire
+ * is the healthcheck's `version`, a version string. So there is no unknown
+ * field for a projection to reach and no image or avatar URL for compact to
+ * strip: a `view` parameter here would advertise a choice that changes nothing,
+ * on the two tools a caller reaches for when something is already wrong. (Same
+ * call as `evite_healthcheck`, which takes no `view` for the same reason.)
  */
 
 import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';

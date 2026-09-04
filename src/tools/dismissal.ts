@@ -9,7 +9,7 @@
  * re-reads the day afterwards rather than trusting the submit's own success.
  */
 
-import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { toolAnnotations } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -107,9 +107,11 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),
+      },
     },
-    async () => minifiedResult(await client.get(ENDPOINTS.dismissalLocations)),
+    async ({ view }) => viewResponse(view, await client.get(ENDPOINTS.dismissalLocations)),
   );
 
   server.registerTool(
@@ -124,14 +126,20 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),
+      },
     },
-    async () => {
+    async ({ view }) => {
       const [info, config] = await Promise.all([
         client.get(ENDPOINTS.schoolInfoBasic, { schoolCode: client.schoolCode }),
         client.get(ENDPOINTS.configSettings, { schoolCode: client.schoolCode }),
       ]);
-      return minifiedResult({ schoolInfo: info, config });
+      // Assembled from two endpoints rather than passed through from one, so it
+      // offers `compact`/`full` and no `raw` rung — same as every other read
+      // here. Media stripping is subtractive, so it applies to an assembled
+      // record exactly as safely as to a passthrough one.
+      return viewResponse(view, { schoolInfo: info, config });
     },
   );
 }

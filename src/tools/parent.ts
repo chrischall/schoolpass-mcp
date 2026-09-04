@@ -8,7 +8,7 @@
  * are pinned by the live check (`scripts/live-check.mjs`).
  */
 
-import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { toolAnnotations } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ENDPOINTS } from '../protocol.js';
@@ -28,7 +28,8 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         openWorld: true,
       }),
       inputSchema: {
-        view: viewArg(),},
+        view: viewArg(),
+      },
     },
     async ({ view }) => {
       const memberId = await client.getMemberId();
@@ -49,7 +50,8 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         openWorld: true,
       }),
       inputSchema: {
-        view: viewArg(),},
+        view: viewArg(),
+      },
     },
     async ({ view }) => {
       const memberId = await client.getMemberId();
@@ -71,7 +73,8 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         openWorld: true,
       }),
       inputSchema: {
-        view: viewArg(),},
+        view: viewArg(),
+      },
     },
     async ({ view }) => {
       const memberId = await client.getMemberId();
