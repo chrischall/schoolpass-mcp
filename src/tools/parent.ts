@@ -9,6 +9,7 @@
  */
 
 import { jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ENDPOINTS } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
@@ -26,12 +27,13 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),},
     },
-    async () => {
+    async ({ view }) => {
       const memberId = await client.getMemberId();
       const data = await client.get(ENDPOINTS.parentStudents, { memberId });
-      return jsonResult(data);
+      return viewResponse(view, data);
     },
   );
 
@@ -46,12 +48,13 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),},
     },
-    async () => {
+    async ({ view }) => {
       const memberId = await client.getMemberId();
       const data = await client.get(ENDPOINTS.parentProfile, { memberId });
-      return jsonResult(data);
+      return viewResponse(view, data);
     },
   );
 
@@ -67,15 +70,16 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),},
     },
-    async () => {
+    async ({ view }) => {
       const memberId = await client.getMemberId();
       const data = await client.get(ENDPOINTS.parentDrivers, {
         memberId,
         includeCarpool: true,
       });
-      return jsonResult(data);
+      return viewResponse(view, data);
     },
   );
 }

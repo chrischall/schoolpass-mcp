@@ -10,6 +10,7 @@
  */
 
 import { jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ENDPOINTS } from '../protocol.js';
@@ -50,19 +51,20 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         openWorld: true,
       }),
       inputSchema: {
+        view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
         start_date: IsoDate.optional().describe('Start of range (YYYY-MM-DD). Defaults to today.'),
         end_date: IsoDate.optional().describe('End of range (YYYY-MM-DD). Defaults to 14 days out.'),
       },
     },
-    async ({ student_id, start_date, end_date }) => {
+    async ({ student_id, start_date, end_date, view }) => {
       const data = await client.get(ENDPOINTS.studentCalendar, {
         schoolCode: client.schoolCode,
         studentId: student_id,
         startDate: start_date ?? today(),
         endDate: end_date ?? daysFromToday(14),
       });
-      return jsonResult(data);
+      return viewResponse(view, data);
     },
   );
 
@@ -79,16 +81,17 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         openWorld: true,
       }),
       inputSchema: {
+        view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
         date: IsoDate.optional().describe('Date (YYYY-MM-DD). Defaults to today.'),
       },
     },
-    async ({ student_id, date }) => {
+    async ({ student_id, date, view }) => {
       const data = await client.get(ENDPOINTS.pickupChanges, {
         studentId: student_id,
         date: date ?? today(),
       });
-      return jsonResult(data);
+      return viewResponse(view, data);
     },
   );
 
