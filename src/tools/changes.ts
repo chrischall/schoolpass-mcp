@@ -17,7 +17,7 @@
  * `200` alone is not treated as proof.
  */
 
-import { McpToolError, jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { McpToolError, minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { AdType, ENDPOINTS, StudentChangeType } from '../protocol.js';
@@ -176,7 +176,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       });
 
       if (args.confirm !== true) {
-        return jsonResult({
+        return minifiedResult({
           dryRun: true,
           willSend: {
             method: 'POST',
@@ -227,7 +227,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         );
       }
       const alreadyInPlace = JSON.stringify(before) === JSON.stringify(after);
-      return jsonResult({ submitted: true, alreadyInPlace, response, before, after });
+      return minifiedResult({ submitted: true, alreadyInPlace, response, before, after });
     },
   );
 
@@ -308,7 +308,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       }
 
       if (confirm !== true) {
-        return jsonResult({
+        return minifiedResult({
           dryRun: true,
           wouldCancel: {
             changeSeriesId: change.changeSeriesId,
@@ -331,7 +331,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       // Scoped to the change we deleted: another change on the same day is
       // not evidence this one survived.
       const cleared = !after.some((e) => e.changeSeriesId === change.changeSeriesId);
-      return jsonResult({ cancelled: true, cleared, response, before, after });
+      return minifiedResult({ cancelled: true, cleared, response, before, after });
     },
   );
 }

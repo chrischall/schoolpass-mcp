@@ -9,7 +9,8 @@
  * re-reads the day afterwards rather than trusting the submit's own success.
  */
 
-import { jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { toolAnnotations } from '@chrischall/mcp-utils';
+import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ENDPOINTS } from '../protocol.js';
@@ -50,19 +51,20 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         openWorld: true,
       }),
       inputSchema: {
+        view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
         start_date: IsoDate.optional().describe('Start of range (YYYY-MM-DD). Defaults to today.'),
         end_date: IsoDate.optional().describe('End of range (YYYY-MM-DD). Defaults to 14 days out.'),
       },
     },
-    async ({ student_id, start_date, end_date }) => {
+    async ({ student_id, start_date, end_date, view }) => {
       const data = await client.get(ENDPOINTS.studentCalendar, {
         schoolCode: client.schoolCode,
         studentId: student_id,
         startDate: start_date ?? today(),
         endDate: end_date ?? daysFromToday(14),
       });
-      return jsonResult(data);
+      return viewResponse(view, data);
     },
   );
 
@@ -79,16 +81,17 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         openWorld: true,
       }),
       inputSchema: {
+        view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
         date: IsoDate.optional().describe('Date (YYYY-MM-DD). Defaults to today.'),
       },
     },
-    async ({ student_id, date }) => {
+    async ({ student_id, date, view }) => {
       const data = await client.get(ENDPOINTS.pickupChanges, {
         studentId: student_id,
         date: date ?? today(),
       });
-      return jsonResult(data);
+      return viewResponse(view, data);
     },
   );
 
@@ -104,9 +107,11 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),
+      },
     },
-    async () => jsonResult(await client.get(ENDPOINTS.dismissalLocations)),
+    async ({ view }) => viewResponse(view, await client.get(ENDPOINTS.dismissalLocations)),
   );
 
   server.registerTool(
@@ -121,14 +126,20 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),
+      },
     },
-    async () => {
+    async ({ view }) => {
       const [info, config] = await Promise.all([
         client.get(ENDPOINTS.schoolInfoBasic, { schoolCode: client.schoolCode }),
         client.get(ENDPOINTS.configSettings, { schoolCode: client.schoolCode }),
       ]);
-      return jsonResult({ schoolInfo: info, config });
+      // Assembled from two endpoints rather than passed through from one, so it
+      // offers `compact`/`full` and no `raw` rung — same as every other read
+      // here. Media stripping is subtractive, so it applies to an assembled
+      // record exactly as safely as to a passthrough one.
+      return viewResponse(view, { schoolInfo: info, config });
     },
   );
 }
