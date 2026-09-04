@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/chrischall/schoolpass-mcp/compare/v0.3.1...v0.4.0) (2026-09-04)
+
+
+### Features
+
+* **tools:** compact by default — strip media URLs, and minify every response ([#30](https://github.com/chrischall/schoolpass-mcp/issues/30)) ([c58c831](https://github.com/chrischall/schoolpass-mcp/commit/c58c83197261382b9048d8225ed21276e3703717))
+
 ## [0.3.1](https://github.com/chrischall/schoolpass-mcp/compare/v0.3.0...v0.3.1) (2026-08-28)
 
 
