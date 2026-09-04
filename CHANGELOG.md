@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/chrischall/schoolpass-mcp/compare/v0.4.0...v0.4.1) (2026-09-04)
+
+
+### Documentation
+
+* **skill:** document the `view` response-shape parameter ([#34](https://github.com/chrischall/schoolpass-mcp/issues/34)) ([10f542b](https://github.com/chrischall/schoolpass-mcp/commit/10f542bcce809fa43c74e018be2ad20946d4375b))
+
 ## [0.4.0](https://github.com/chrischall/schoolpass-mcp/compare/v0.3.1...v0.4.0) (2026-09-04)
 
 
