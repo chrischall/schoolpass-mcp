@@ -55,15 +55,60 @@ email/password/school-code — never retry with a guess.
 |------|-------|
 | `schoolpass_healthcheck` | Reachability + auth, separated. No secrets in the output. Start here when a tool says it is not configured. |
 | `schoolpass_whoami` | The parent identity the server signed in as (member id, user type, name). |
-| `schoolpass_list_students` | The parent's linked students — name, grade, home dismissal location, aftercare. Gives the `student_id` other tools need. |
-| `schoolpass_get_profile` | The parent account profile. |
-| `schoolpass_list_drivers` | Authorized pickup drivers, with their carpools. |
-| `schoolpass_get_calendar(student_id, start_date?, end_date?)` | A student's arrival/dismissal calendar over a range (defaults today → 14 days out). |
-| `schoolpass_list_pickup_changes(student_id, date?)` | Pickup/dismissal changes for a student on a date (defaults today). |
-| `schoolpass_list_dismissal_locations` | The school's dismissal locations (car line, bus, aftercare, walkers…) with ids. |
-| `schoolpass_get_school_info` | Basic school info and per-school config. |
+| `schoolpass_list_students(view?)` | The parent's linked students — name, grade, home dismissal location, aftercare. Gives the `student_id` other tools need. |
+| `schoolpass_get_profile(view?)` | The parent account profile. |
+| `schoolpass_list_drivers(view?)` | Authorized pickup drivers, with their carpools. |
+| `schoolpass_get_calendar(student_id, start_date?, end_date?, view?)` | A student's arrival/dismissal calendar over a range (defaults today → 14 days out). |
+| `schoolpass_list_pickup_changes(student_id, date?, view?)` | Pickup/dismissal changes for a student on a date (defaults today). |
+| `schoolpass_list_dismissal_locations(view?)` | The school's dismissal locations (car line, bus, aftercare, walkers…) with ids. |
+| `schoolpass_get_school_info(view?)` | Basic school info and per-school config. |
 | `schoolpass_submit_dismissal_change(student_id, date, change_type, …, confirm)` | Submit a dismissal/arrival change (absent, early dismissal, late arrival, move to carpool/bus/location). CONFIRM-GATED: without confirm:true returns a dry-run preview and makes no change; with confirm:true submits and re-reads the calendar to prove it landed. |
 | `schoolpass_cancel_dismissal_change(student_id, date, confirm)` | Cancel a change for a date, returning it to default. CONFIRM-GATED with a preview. |
+
+## Response shape (`view`)
+
+Seven read tools take `view: "compact" | "full"` — `schoolpass_list_students`,
+`schoolpass_get_profile`, `schoolpass_list_drivers`,
+`schoolpass_get_calendar`, `schoolpass_list_pickup_changes`,
+`schoolpass_list_dismissal_locations` and `schoolpass_get_school_info` — and
+**`compact` is the default**. The slim rung arrives without being asked for,
+because an efficiency a caller has to know about and request is one that
+usually is not requested.
+
+**Compact strips image and avatar URLs, and claims no field projection.** What
+actually goes on these tools is the student and driver photo URLs SchoolPass
+hangs off each record — bytes a model cannot see or fetch. Everything else
+arrives exactly as `full` would give it: this server hands SchoolPass's
+payloads back close to verbatim and holds no captured fixture or documented
+field list for them, so a named field set would be invented, and an invented
+one returns a record with holes in it that still reads like a verified answer.
+
+`view: "full"` returns the record untouched, photos included. There is **no
+`raw` rung**: `full` already IS the untouched payload, so a third value could
+only alias it.
+
+`view` is this server's vocabulary and never reaches SchoolPass — a test pins
+that, because two sibling repos leaked it into the upstream query by spreading
+the whole argument object into the request.
+
+The other four tools take no `view`:
+
+- **`schoolpass_whoami`** answers with seven fields this server assembles by
+  name — member id, user type and its label, first and last name, email, school
+  code. There is no un-projected payload left underneath for a media rule to
+  act on, so a `view` here would be a parameter that decides nothing, which is
+  worse than none.
+- **`schoolpass_submit_dismissal_change` and
+  `schoolpass_cancel_dismissal_change`** are writes. A write's response is a
+  receipt — a preview, or a status plus the calendar re-read that proves the
+  change landed — with nothing to strip and everything to keep.
+- **`schoolpass_healthcheck`** answers reachability and auth, separately, and
+  carries no record at all.
+
+A test in `tests/tools.test.ts` asserts this exact roster: if a read tool gains
+`view` and is not added to the covered cases, it fails. That guard exists
+because a sibling repo shipped fourteen tools whose `view` was never wired up,
+and the suite stayed green.
 
 ## Notes
 
