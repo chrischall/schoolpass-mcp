@@ -9,7 +9,7 @@
  * re-reads the day afterwards rather than trusting the submit's own success.
  */
 
-import { jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -109,7 +109,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
       }),
       inputSchema: {},
     },
-    async () => jsonResult(await client.get(ENDPOINTS.dismissalLocations)),
+    async () => minifiedResult(await client.get(ENDPOINTS.dismissalLocations)),
   );
 
   server.registerTool(
@@ -131,7 +131,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         client.get(ENDPOINTS.schoolInfoBasic, { schoolCode: client.schoolCode }),
         client.get(ENDPOINTS.configSettings, { schoolCode: client.schoolCode }),
       ]);
-      return jsonResult({ schoolInfo: info, config });
+      return minifiedResult({ schoolInfo: info, config });
     },
   );
 }

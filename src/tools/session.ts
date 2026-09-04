@@ -6,7 +6,7 @@
  * Both are read-only and take no `confirm` gate.
  */
 
-import { jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { UserType } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
@@ -27,7 +27,7 @@ export function registerSessionTools(server: McpServer, client: SchoolPassClient
       }),
       inputSchema: {},
     },
-    async () => jsonResult(await client.healthcheck()),
+    async () => minifiedResult(await client.healthcheck()),
   );
 
   server.registerTool(
@@ -46,7 +46,7 @@ export function registerSessionTools(server: McpServer, client: SchoolPassClient
     },
     async () => {
       const id = await client.getIdentity();
-      return jsonResult({
+      return minifiedResult({
         memberId: id.userId,
         userType: id.userType,
         userTypeName: UserType[id.userType] ?? String(id.userType),

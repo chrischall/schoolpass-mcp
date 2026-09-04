@@ -8,7 +8,7 @@
  * are pinned by the live check (`scripts/live-check.mjs`).
  */
 
-import { jsonResult, toolAnnotations } from '@chrischall/mcp-utils';
+import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ENDPOINTS } from '../protocol.js';
