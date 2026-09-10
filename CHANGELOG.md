@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.2](https://github.com/chrischall/schoolpass-mcp/compare/v0.4.1...v0.4.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **deps:** @chrischall/mcp-utils 0.26.1 ([#45](https://github.com/chrischall/schoolpass-mcp/issues/45)) ([06b24e4](https://github.com/chrischall/schoolpass-mcp/commit/06b24e49d0c3baf16a8131090c5a35b5be8ce1f6))
+* **deps:** bump hono from 4.13.4 to 4.13.7 ([#43](https://github.com/chrischall/schoolpass-mcp/issues/43)) ([63a0f70](https://github.com/chrischall/schoolpass-mcp/commit/63a0f70e59a494d99c007bba25ddd331f3475a34))
+* **deps:** declare the peer floors mcp-utils 0.26.1 requires ([#46](https://github.com/chrischall/schoolpass-mcp/issues/46)) ([632a696](https://github.com/chrischall/schoolpass-mcp/commit/632a696dd06762f4d1f6f46a9d4592718c940cc1))
+
 ## [0.4.1](https://github.com/chrischall/schoolpass-mcp/compare/v0.4.0...v0.4.1) (2026-09-04)
 
 
