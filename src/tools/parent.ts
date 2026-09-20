@@ -10,7 +10,8 @@
 
 import { toolAnnotations } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
+import { z } from 'zod';
 import { ENDPOINTS } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
 
@@ -27,9 +28,9 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
-      },
+      }),
     },
     async ({ view }) => {
       const memberId = await client.getMemberId();
@@ -49,9 +50,9 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
-      },
+      }),
     },
     async ({ view }) => {
       const memberId = await client.getMemberId();
@@ -72,9 +73,9 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
-      },
+      }),
     },
     async ({ view }) => {
       const memberId = await client.getMemberId();

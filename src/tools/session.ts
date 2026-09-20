@@ -19,7 +19,8 @@
  */
 
 import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
+import { z } from 'zod';
 import { UserType } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
 
@@ -37,7 +38,7 @@ export function registerSessionTools(server: McpServer, client: SchoolPassClient
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
     async () => minifiedResult(await client.healthcheck()),
   );
@@ -54,7 +55,7 @@ export function registerSessionTools(server: McpServer, client: SchoolPassClient
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
     async () => {
       const id = await client.getIdentity();

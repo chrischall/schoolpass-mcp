@@ -18,7 +18,7 @@
  */
 
 import { McpToolError, minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { AdType, ENDPOINTS, StudentChangeType } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
@@ -107,7 +107,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'Get student_id from schoolpass_list_students and move_to_id from schoolpass_list_dismissal_locations ' +
         '(a dismissal location id) or the student calendar (a carpool moveToId).',
       annotations: toolAnnotations({ title: 'Submit dismissal change', readOnly: false, openWorld: true }),
-      inputSchema: {
+      inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date to change (YYYY-MM-DD).'),
         change_type: z
@@ -143,7 +143,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           .boolean()
           .optional()
           .describe('Must be true to actually submit. Without it, returns a dry-run preview only.'),
-      },
+      }),
     },
     async (args) => {
       // The description promises move_to_id is required for these; enforce it
@@ -240,7 +240,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'preview of what would be cancelled, making no change. With confirm:true it deletes the change and ' +
         're-reads the calendar to confirm the day is back to default.',
       annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true }),
-      inputSchema: {
+      inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date whose change should be cancelled (YYYY-MM-DD).'),
         change_series_id: z
@@ -257,7 +257,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           .boolean()
           .optional()
           .describe('Must be true to actually cancel. Without it, returns a preview only.'),
-      },
+      }),
     },
     async ({ student_id, date, change_series_id, confirm }) => {
       const readDay = async () => {
