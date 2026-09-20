@@ -11,7 +11,7 @@
 
 import { toolAnnotations } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { ENDPOINTS } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
@@ -50,12 +50,12 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
         start_date: IsoDate.optional().describe('Start of range (YYYY-MM-DD). Defaults to today.'),
         end_date: IsoDate.optional().describe('End of range (YYYY-MM-DD). Defaults to 14 days out.'),
-      },
+      }),
     },
     async ({ student_id, start_date, end_date, view }) => {
       const data = await client.get(ENDPOINTS.studentCalendar, {
@@ -80,11 +80,11 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
         date: IsoDate.optional().describe('Date (YYYY-MM-DD). Defaults to today.'),
-      },
+      }),
     },
     async ({ student_id, date, view }) => {
       const data = await client.get(ENDPOINTS.pickupChanges, {
@@ -107,9 +107,9 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
-      },
+      }),
     },
     async ({ view }) => viewResponse(view, await client.get(ENDPOINTS.dismissalLocations)),
   );
@@ -126,9 +126,9 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         idempotent: true,
         openWorld: true,
       }),
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
-      },
+      }),
     },
     async ({ view }) => {
       const [info, config] = await Promise.all([
