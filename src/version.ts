@@ -4,4 +4,4 @@
  * sync from here (see `release-please-config.json` extra-files) or from this
  * constant, so nothing is hand-bumped.
  */
-export const VERSION = '0.4.2'; // x-release-please-version
+export const VERSION = '1.0.0'; // x-release-please-version

@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/chrischall/schoolpass-mcp/compare/v0.4.2...v1.0.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** migrate server to SDK v2 and take mcp-utils 1.0.0 ([#50](https://github.com/chrischall/schoolpass-mcp/issues/50))
+
+### Features
+
+* **mcp:** migrate server to SDK v2 and take mcp-utils 1.0.0 ([#50](https://github.com/chrischall/schoolpass-mcp/issues/50)) ([bd9d1ec](https://github.com/chrischall/schoolpass-mcp/commit/bd9d1ec3d8bbefa1c1469adb8fc55b33beb37767))
+
+
+### Bug Fixes
+
+* **release:** drop bump-minor-pre-major so a breaking change cuts a major ([#52](https://github.com/chrischall/schoolpass-mcp/issues/52)) ([45672ca](https://github.com/chrischall/schoolpass-mcp/commit/45672ca4a71281f0c2afc0ee72f9b87845bc9d83))
+
 ## [0.4.2](https://github.com/chrischall/schoolpass-mcp/compare/v0.4.1...v0.4.2) (2026-09-10)
 
 
