@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.0...v1.0.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **tools:** say which writes are destructive ([#53](https://github.com/chrischall/schoolpass-mcp/issues/53)) ([f1aee11](https://github.com/chrischall/schoolpass-mcp/commit/f1aee11c52b33a912d9601ccece31c2d7d0cf0e1))
+
 ## [1.0.0](https://github.com/chrischall/schoolpass-mcp/compare/v0.4.2...v1.0.0) (2026-09-20)
 
 
