@@ -1,0 +1,11 @@
+[mcp_servers.schoolpass]
+command = "npx"
+args = [
+    "-y",
+    "schoolpass-mcp",
+]
+env_vars = [
+    "SCHOOLPASS_EMAIL",
+    "SCHOOLPASS_PASSWORD",
+    "SCHOOLPASS_SCHOOL_CODE",
+]
