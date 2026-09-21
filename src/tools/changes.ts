@@ -106,7 +106,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'request. With confirm:true it submits and then re-reads the calendar to show the change landed. ' +
         'Get student_id from schoolpass_list_students and move_to_id from schoolpass_list_dismissal_locations ' +
         '(a dismissal location id) or the student calendar (a carpool moveToId).',
-      annotations: toolAnnotations({ title: 'Submit dismissal change', readOnly: false, openWorld: true }),
+      annotations: toolAnnotations({ title: 'Submit dismissal change', readOnly: false, openWorld: true, destructive: true }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date to change (YYYY-MM-DD).'),
@@ -239,7 +239,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'date to its default. CONFIRM-GATED: without confirm:true it looks up the change and returns a ' +
         'preview of what would be cancelled, making no change. With confirm:true it deletes the change and ' +
         're-reads the calendar to confirm the day is back to default.',
-      annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true }),
+      annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: false }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date whose change should be cancelled (YYYY-MM-DD).'),
