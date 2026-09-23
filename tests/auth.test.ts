@@ -5,6 +5,7 @@ import {
   pickIdentity,
   refreshToken,
   requestToken,
+  SchoolPassRefreshError,
   tokenExpiryMs,
   type SchoolPassIdentity,
 } from '../src/auth.js';
@@ -243,6 +244,13 @@ describe('refreshToken', () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toMatch(/refresh failed/i);
     expect((err as { status?: number }).status).toBe(400);
+  });
+
+  it('names the refresh error like the other SchoolPass errors', async () => {
+    const { fetchImpl } = mockFetch(401, 'nope');
+    const err = await refreshToken(config, 'a', 'b', fetchImpl).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SchoolPassRefreshError);
+    expect((err as Error).name).toBe('SchoolPassRefreshError');
   });
 
   it('marks a 5xx refresh failure as transient in its hint', async () => {
