@@ -471,6 +471,60 @@ describe('SchoolPassClient — dead refresh token with a cached session', () => 
   );
 
   it(
+    'a restored expired access token + good refresh token refreshes with the stored access token — no login',
+    withCacheDir(async (cacheEnv) => {
+      // The ordinary cold start (mcp-host idles children out): the cached access
+      // token has expired but the refresh token is still good. The refresh
+      // contract is {schoolCode, access_token, refresh_token}, so the stored
+      // access token must ride along — an empty one gets the refresh rejected
+      // and throws away a good session for a reCAPTCHA-fronted login.
+      const expiresAt = Date.now() - 60_000;
+      const storedAccess = jwt(Math.floor(expiresAt / 1000));
+      createSessionCache(resolveConfig(cacheEnv), cacheEnv)!.save({
+        identity: { userId: 5, userType: 3 } as CachedSession['identity'],
+        tokens: { accessToken: storedAccess, refreshToken: 'good-refresh', expiresAt },
+      });
+
+      let logins = 0;
+      const refreshBodies: Array<Record<string, unknown>> = [];
+      const refreshed = `${jwt(futureExp())}.refreshed`;
+      const fetchImpl: FetchLike = async (url, init) => {
+        if (url.includes('Auth/users')) {
+          logins += 1;
+          return new Response(JSON.stringify([{ userId: 5, userType: 3 }]), { status: 200 });
+        }
+        if (url.includes('Auth/token/refresh')) {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          refreshBodies.push(body);
+          return body.access_token === storedAccess && body.refresh_token === 'good-refresh'
+            ? new Response(JSON.stringify({ access_token: refreshed, refresh_token: 'r2' }), {
+                status: 200,
+              })
+            : new Response('invalid token pair', { status: 400 });
+        }
+        if (url.includes('Auth/token')) {
+          return new Response(
+            JSON.stringify({ access_token: `${jwt(futureExp())}.login`, refresh_token: 'r-login' }),
+            { status: 200 },
+          );
+        }
+        const auth = String(init.headers.Authorization ?? '').replace(/^Bearer /, '');
+        return auth === refreshed
+          ? new Response('{"ok":1}', { status: 200 })
+          : new Response('unauthorized', { status: 401 });
+      };
+
+      const client = new SchoolPassClient({ env: cacheEnv, fetchImpl });
+      await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+      expect(logins).toBe(0);
+      expect(refreshBodies).toHaveLength(1);
+      expect(refreshBodies[0]?.access_token).toBe(storedAccess);
+      const cached = createSessionCache(resolveConfig(cacheEnv), cacheEnv)!.load();
+      expect(cached?.tokens.refreshToken).toBe('r2');
+    }),
+  );
+
+  it(
     'a transient refresh outage (503) does not destroy the cached refresh token',
     withCacheDir(async (cacheEnv) => {
       seed(cacheEnv, Date.now() - 60_000);

@@ -110,6 +110,26 @@ export class SchoolPassClient {
         // the cache ignore a caller's configuration — and let the test suite
         // disable it through a channel the client was not actually consulting.
         const cache = createSessionCache(config, this.env);
+        // The view restores the identity; the access token is restored here. The
+        // refresh contract is {schoolCode, access_token, refresh_token}, and the
+        // manager refreshes an expired restored record INSIDE getAccessToken()
+        // below — before that call's result could set currentAccessToken. Left
+        // empty, the server rejects the refresh as revoked, so every cold start
+        // with an expired access token threw away a good session for a login.
+        const view = tokenView(cache, {
+          get: () => this.identity,
+          set: (identity) => {
+            this.identity = identity;
+          },
+        });
+        const persistence = view && {
+          ...view,
+          load: () => {
+            const restored = view.load();
+            if (restored) this.currentAccessToken = restored.accessToken;
+            return restored;
+          },
+        };
         // The login is handed to the manager as a BOOTSTRAP FUNCTION, not run
         // here and passed in as tokens. Only the function form lets the manager
         // recover on its own: when a refresh is rejected as revoked it clears the
@@ -128,12 +148,7 @@ export class SchoolPassClient {
           // and clears it when the refresh token is dead — through a view that
           // carries the identity alongside, so one file always holds a
           // complete session.
-          persistence: tokenView(cache, {
-            get: () => this.identity,
-            set: (identity) => {
-              this.identity = identity;
-            },
-          }),
+          persistence,
           onPersistError: reportCacheWriteFailure,
           refresh: async (rt) => {
             const next = await refreshTokens(config, this.currentAccessToken, rt, this.fetchImpl);
