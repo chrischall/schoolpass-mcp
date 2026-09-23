@@ -125,22 +125,83 @@ describe('schoolpass_submit_dismissal_change', () => {
       }),
     );
     expect(res.submitted).toBe(true);
+    expect((res as { verified?: boolean }).verified).toBe(true);
     expect(submits).toHaveLength(1);
     expect(res.before).not.toEqual(res.after);
     await h.close();
   });
 
-  it('errors when the submit succeeds but the calendar did not change', async () => {
-    const { client } = fakeClient({ afterChanges: false });
+  it('reports an unverified submit — NOT an error — when the calendar does not show the change', async () => {
+    // The POST reached SchoolPass. An error here would invite the model to
+    // retry, sending a second POST (changeSeriesId 0) that can create a
+    // duplicate change series on the child's day. So once the write resolves,
+    // the tool never fails: it says the write went through but is unverified.
+    const { client, submits } = fakeClient({ afterChanges: false });
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
       student_id: 11278,
       date: '2026-09-14',
       change_type: 'carpool',
       move_to_id: 8553,
       confirm: true,
     });
+    expect(raw.isError).toBeFalsy();
+    const res = parseToolResult<{ submitted: boolean; verified: boolean; after: unknown[]; note: string }>(raw);
+    expect(res.submitted).toBe(true);
+    expect(res.verified).toBe(false);
+    expect(res.after).toHaveLength(1);
+    expect(res.note).toMatch(/do not resubmit/i);
+    expect(res.note).toMatch(/move_to_id/);
+    expect(submits).toHaveLength(1);
+    await h.close();
+  });
+
+  it('does not fail when the calendar re-read after a successful submit throws', async () => {
+    // A network blip / 5xx on StudentCalendar AFTER the write must not turn an
+    // accepted change into a failed call the model will retry.
+    let submitted = false;
+    const submits: unknown[] = [];
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() { return 15348; },
+      async submitStudentChange(body: unknown) { submits.push(body); submitted = true; return { success: true }; },
+      async get() {
+        if (submitted) throw new Error('SchoolPass API error: 503 Service Unavailable');
+        return { dailyList: [] };
+      },
+    } as unknown as SchoolPassClient;
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505, confirm: true,
+    });
+    expect(raw.isError).toBeFalsy();
+    const res = parseToolResult<{
+      submitted: boolean; verified: boolean; response: unknown; after?: unknown; readError: string; note: string;
+    }>(raw);
+    expect(res.submitted).toBe(true);
+    expect(res.verified).toBe(false);
+    expect(res.response).toEqual({ success: true });
+    expect(res.after).toBeUndefined();
+    expect(res.readError).toContain('503');
+    expect(res.note).toMatch(/do not resubmit/i);
+    expect(submits).toHaveLength(1);
+    await h.close();
+  });
+
+  it('still fails — before any write — when the pre-submit calendar read throws', async () => {
+    const submits: unknown[] = [];
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() { return 15348; },
+      async submitStudentChange(body: unknown) { submits.push(body); return { success: true }; },
+      async get() { throw new Error('SchoolPass API error: 503'); },
+    } as unknown as SchoolPassClient;
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505, confirm: true,
+    });
     expect(res.isError).toBe(true);
+    expect(submits).toHaveLength(0);
     await h.close();
   });
 
@@ -221,7 +282,7 @@ describe('schoolpass_submit_dismissal_change', () => {
     await h.close();
   });
 
-  it('still fails when the day changes but not into the requested state', async () => {
+  it('reports unverified when the day changes but not into the requested state', async () => {
     // A diff-based check would pass this: before !== after. The change that
     // appeared is a DIFFERENT type, so the requested write did not land.
     let submitted = false;
@@ -238,10 +299,13 @@ describe('schoolpass_submit_dismissal_change', () => {
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
       student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505, confirm: true,
     });
-    expect(res.isError).toBe(true);
+    expect(raw.isError).toBeFalsy();
+    const res = parseToolResult<{ submitted: boolean; verified: boolean }>(raw);
+    expect(res.submitted).toBe(true);
+    expect(res.verified).toBe(false);
     await h.close();
   });
 
@@ -269,7 +333,7 @@ describe('schoolpass_submit_dismissal_change', () => {
     await h.close();
   });
 
-  it('fails a targetless change that never appears, without naming move_to_id', async () => {
+  it('reports an unverified targetless change without naming move_to_id', async () => {
     // Same landed-check failure as above but with NO move_to_id, so the hint
     // omits it — an `absent` change the calendar never reflects.
     let submitted = false;
@@ -286,10 +350,13 @@ describe('schoolpass_submit_dismissal_change', () => {
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = await h.callTool('schoolpass_submit_dismissal_change', {
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
       student_id: 11278, date: '2026-09-14', change_type: 'absent', confirm: true,
     });
-    expect(res.isError).toBe(true);
+    expect(raw.isError).toBeFalsy();
+    const res = parseToolResult<{ verified: boolean; note: string }>(raw);
+    expect(res.verified).toBe(false);
+    expect(res.note).not.toMatch(/move_to_id/);
     await h.close();
   });
 
@@ -446,6 +513,25 @@ describe('schoolpass_cancel_dismissal_change targeting', () => {
       student_id: 11278, date: '2026-09-14', change_series_id: 999, confirm: true,
     });
     expect(res.isError).toBe(true);
+    await h.close();
+  });
+});
+
+describe('write-tool annotations', () => {
+  it('marks both writes destructive and non-idempotent so clients gate them for a human', async () => {
+    // `confirm` is filled in by the model, not a person — the annotation is the
+    // only signal a client has to put an approval prompt in front of the call.
+    // Cancelling DELETEs a child's real dismissal arrangement, so it must be
+    // gated exactly like submit.
+    const { client } = cancelClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const { tools } = await h.client.listTools();
+    for (const name of ['schoolpass_submit_dismissal_change', 'schoolpass_cancel_dismissal_change']) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool?.annotations, name).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+      // Absent means false per the MCP spec; it must never claim idempotency.
+      expect(tool?.annotations?.idempotentHint, name).not.toBe(true);
+    }
     await h.close();
   });
 });

@@ -14,7 +14,9 @@
  * returns a dry-run `preview` of exactly what would be sent. With `confirm:
  * true` it submits, then re-reads the student's calendar for the date and
  * returns before/after so the caller can see the change actually landed — a
- * `200` alone is not treated as proof.
+ * `200` alone is not treated as proof. Once the POST resolves the tool never
+ * errors (a retry would duplicate the change); an unconfirmed re-read is
+ * reported as `verified: false` instead.
  */
 
 import { McpToolError, minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
@@ -103,7 +105,9 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'Submit a dismissal/arrival change for a student on a single date — send them to a different ' +
         'dismissal location or carpool, mark early dismissal / late arrival / absent, etc. ' +
         'CONFIRM-GATED: without confirm:true it makes no change and returns a dry-run preview of the exact ' +
-        'request. With confirm:true it submits and then re-reads the calendar to show the change landed. ' +
+        'request. With confirm:true it submits and then re-reads the calendar to show the change landed ' +
+        '(verified:true); if the re-read fails or does not show it yet the result is verified:false — the ' +
+        'change WAS submitted, so do not resubmit; re-read the calendar instead. ' +
         'Get student_id from schoolpass_list_students and move_to_id from schoolpass_list_dismissal_locations ' +
         '(a dismissal location id) or the student calendar (a carpool moveToId).',
       annotations: toolAnnotations({ title: 'Submit dismissal change', readOnly: false, openWorld: true, destructive: true }),
@@ -200,7 +204,29 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       };
       const before = await readDay();
       const response = await client.submitStudentChange(body);
-      const after = await readDay();
+
+      // From here on the write has REACHED SchoolPass, so the tool never
+      // fails: an error would read as "nothing happened" and invite a retry,
+      // and a retry POSTs a second change (changeSeriesId 0) that can create a
+      // duplicate change series on the child's day. A re-read that throws or
+      // lags is reported as `verified: false`, not as a failed call.
+      const doNotResubmit =
+        'The change WAS submitted — do not resubmit it, or SchoolPass may record a duplicate change. ' +
+        'Re-read the day with schoolpass_get_calendar (or schoolpass_list_pickup_changes) to confirm it; ' +
+        'use schoolpass_cancel_dismissal_change to undo a wrong one.';
+      let after: ChangeEntry[];
+      try {
+        after = await readDay();
+      } catch (err) {
+        return minifiedResult({
+          submitted: true,
+          verified: false,
+          response,
+          before,
+          readError: String(err),
+          note: `SchoolPass accepted the change, but re-reading the calendar to verify it failed. ${doNotResubmit}`,
+        });
+      }
 
       // docs/SCHOOLPASS-API.md states the proof: "confirm a non-default entry
       // (isDefault:false, a populated changeSeriesId) appeared". Verify by
@@ -214,20 +240,24 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         e.changeSeriesId != null &&
         e.studentChangeType === changeType &&
         (args.move_to_id == null || e.moveToId === args.move_to_id);
-      const landed = (after as ChangeEntry[]).some(requested);
-      if (!landed) {
-        throw new McpToolError(
-          'SchoolPass accepted the change (no error) but the requested change is not on the calendar for that date.',
-          {
-            hint:
-              'The submit returned success, but re-reading the day shows no non-default entry matching this change_type' +
-              (args.move_to_id != null ? ' and move_to_id' : '') +
-              ' — verify the student id, date, and move_to_id.',
-          },
-        );
-      }
       const alreadyInPlace = JSON.stringify(before) === JSON.stringify(after);
-      return minifiedResult({ submitted: true, alreadyInPlace, response, before, after });
+      if (!after.some(requested)) {
+        return minifiedResult({
+          submitted: true,
+          verified: false,
+          alreadyInPlace,
+          response,
+          before,
+          after,
+          note:
+            'SchoolPass accepted the change (no error), but the re-read calendar does not yet show a ' +
+            'non-default entry matching this change_type' +
+            (args.move_to_id != null ? ' and move_to_id' : '') +
+            ' (it may lag, or the server may have normalised the target). ' +
+            doNotResubmit,
+        });
+      }
+      return minifiedResult({ submitted: true, verified: true, alreadyInPlace, response, before, after });
     },
   );
 
@@ -239,7 +269,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'date to its default. CONFIRM-GATED: without confirm:true it looks up the change and returns a ' +
         'preview of what would be cancelled, making no change. With confirm:true it deletes the change and ' +
         're-reads the calendar to confirm the day is back to default.',
-      annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: false }),
+      annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: true, idempotent: false }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date whose change should be cancelled (YYYY-MM-DD).'),
