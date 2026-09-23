@@ -239,7 +239,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'date to its default. CONFIRM-GATED: without confirm:true it looks up the change and returns a ' +
         'preview of what would be cancelled, making no change. With confirm:true it deletes the change and ' +
         're-reads the calendar to confirm the day is back to default.',
-      annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: false }),
+      annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: true, idempotent: false }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date whose change should be cancelled (YYYY-MM-DD).'),

@@ -449,3 +449,22 @@ describe('schoolpass_cancel_dismissal_change targeting', () => {
     await h.close();
   });
 });
+
+describe('write-tool annotations', () => {
+  it('marks both writes destructive and non-idempotent so clients gate them for a human', async () => {
+    // `confirm` is filled in by the model, not a person — the annotation is the
+    // only signal a client has to put an approval prompt in front of the call.
+    // Cancelling DELETEs a child's real dismissal arrangement, so it must be
+    // gated exactly like submit.
+    const { client } = cancelClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const { tools } = await h.client.listTools();
+    for (const name of ['schoolpass_submit_dismissal_change', 'schoolpass_cancel_dismissal_change']) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool?.annotations, name).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+      // Absent means false per the MCP spec; it must never claim idempotency.
+      expect(tool?.annotations?.idempotentHint, name).not.toBe(true);
+    }
+    await h.close();
+  });
+});
