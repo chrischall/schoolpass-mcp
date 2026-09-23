@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.2](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.1...v1.0.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* **deps:** bump dotenv from 17.4.2 to 18.0.0 ([#58](https://github.com/chrischall/schoolpass-mcp/issues/58)) ([fc30159](https://github.com/chrischall/schoolpass-mcp/commit/fc3015950452a551f5a839defdf14c921c9eab62))
+* **deps:** require zod ^4.6.5 to match @chrischall/mcp-utils 2.4.0 ([#62](https://github.com/chrischall/schoolpass-mcp/issues/62)) ([b9f17cb](https://github.com/chrischall/schoolpass-mcp/commit/b9f17cb5a7c4143a439029ac319c1ac8522e6011))
+* **deps:** upgrade @chrischall/mcp-utils to 2.4.0 and @fetchproxy/* to 3.2.0 ([#60](https://github.com/chrischall/schoolpass-mcp/issues/60)) ([b464fce](https://github.com/chrischall/schoolpass-mcp/commit/b464fcee3724afc9d3e5a1d510a4cf0e3eb5bac0))
+
 ## [1.0.1](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.0...v1.0.1) (2026-09-21)
 
 
