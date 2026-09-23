@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SchoolPassClient } from '../src/client.js';
 import { SchoolPassApiError, type FetchLike } from '../src/protocol.js';
-import { SchoolPassConfigError } from '../src/config.js';
+import { SchoolPassConfigError, resolveConfig } from '../src/config.js';
+import { createSessionCache, type CachedSession } from '../src/session-cache.js';
 
 const env = {
   // Off by default here as well as in tests/_setup.ts: the client reads the
@@ -368,4 +369,171 @@ describe('SchoolPassClient — session cache hit', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe('SchoolPassClient — dead refresh token with a cached session', () => {
+  // fleet-audit#14: a cached record whose refresh token has died must be
+  // discarded and replaced by a full login — not replayed forever (and across
+  // restarts) until someone deletes session.json by hand.
+
+  /** Seed the cache with a session whose refresh token the server rejects. */
+  function seed(cacheEnv: NodeJS.ProcessEnv, expiresAt: number): void {
+    createSessionCache(resolveConfig(cacheEnv), cacheEnv)!.save({
+      identity: { userId: 5, userType: 3 } as CachedSession['identity'],
+      tokens: { accessToken: jwt(Math.floor(expiresAt / 1000)), refreshToken: 'dead-refresh', expiresAt },
+    });
+  }
+
+  /**
+   * Login mints `fresh-<n>`-bearing JWTs; refresh answers `refreshStatus`; data
+   * calls succeed only for a token minted by a login in THIS process.
+   */
+  function server(refreshStatus: number) {
+    const minted = new Set<string>();
+    let logins = 0;
+    let refreshes = 0;
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (url.includes('Auth/users')) {
+        logins += 1;
+        return new Response(JSON.stringify([{ userId: 5, userType: 3 }]), { status: 200 });
+      }
+      if (url.includes('Auth/token/refresh')) {
+        refreshes += 1;
+        return new Response('refresh token expired', { status: refreshStatus });
+      }
+      if (url.includes('Auth/token')) {
+        const token = `${jwt(futureExp())}.${logins}`;
+        minted.add(token);
+        return new Response(JSON.stringify({ access_token: token, refresh_token: 'r-new' }), {
+          status: 200,
+        });
+      }
+      const auth = String(init.headers.Authorization ?? '').replace(/^Bearer /, '');
+      return minted.has(auth)
+        ? new Response('{"ok":1}', { status: 200 })
+        : new Response('unauthorized', { status: 401 });
+    };
+    return { fetchImpl, logins: () => logins, refreshes: () => refreshes };
+  }
+
+  function withCacheDir(fn: (cacheEnv: NodeJS.ProcessEnv) => Promise<void>) {
+    return async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'schoolpass-dead-'));
+      try {
+        await fn({
+          ...env,
+          SCHOOLPASS_SESSION_CACHE: 'true',
+          SCHOOLPASS_SESSION_FILE: join(dir, 'session.json'),
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+  }
+
+  it(
+    'proactive path: an expired cached token + dead refresh re-logs in and re-caches',
+    withCacheDir(async (cacheEnv) => {
+      seed(cacheEnv, Date.now() - 60_000);
+      const s = server(400);
+      const client = new SchoolPassClient({ env: cacheEnv, fetchImpl: s.fetchImpl });
+      await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+      expect(s.logins()).toBe(1);
+
+      // The dead record was replaced, so a restart does not inherit it.
+      const cached = createSessionCache(resolveConfig(cacheEnv), cacheEnv)!.load();
+      expect(cached?.tokens.refreshToken).toBe('r-new');
+      expect(cached?.identity.userId).toBe(5);
+
+      const restarted = new SchoolPassClient({ env: cacheEnv, fetchImpl: s.fetchImpl });
+      await expect(restarted.get('parent/profile')).resolves.toEqual({ ok: 1 });
+      expect(s.logins()).toBe(1);
+    }),
+  );
+
+  it(
+    'reactive path: a 401 on the cached token + dead refresh re-logs in instead of replaying the dead record',
+    withCacheDir(async (cacheEnv) => {
+      // Not expired locally, but the server no longer honours it.
+      seed(cacheEnv, Date.now() + 3_600_000);
+      const cache = createSessionCache(resolveConfig(cacheEnv), cacheEnv)!;
+
+      const s = server(400);
+      const client = new SchoolPassClient({ env: cacheEnv, fetchImpl: s.fetchImpl });
+      await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+      expect(s.logins()).toBe(1);
+      expect(cache.load()?.tokens.refreshToken).toBe('r-new');
+
+      // And the NEXT call in the same process keeps working.
+      await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+      expect(s.logins()).toBe(1);
+    }),
+  );
+
+  it(
+    'a restored expired access token + good refresh token refreshes with the stored access token — no login',
+    withCacheDir(async (cacheEnv) => {
+      // The ordinary cold start (mcp-host idles children out): the cached access
+      // token has expired but the refresh token is still good. The refresh
+      // contract is {schoolCode, access_token, refresh_token}, so the stored
+      // access token must ride along — an empty one gets the refresh rejected
+      // and throws away a good session for a reCAPTCHA-fronted login.
+      const expiresAt = Date.now() - 60_000;
+      const storedAccess = jwt(Math.floor(expiresAt / 1000));
+      createSessionCache(resolveConfig(cacheEnv), cacheEnv)!.save({
+        identity: { userId: 5, userType: 3 } as CachedSession['identity'],
+        tokens: { accessToken: storedAccess, refreshToken: 'good-refresh', expiresAt },
+      });
+
+      let logins = 0;
+      const refreshBodies: Array<Record<string, unknown>> = [];
+      const refreshed = `${jwt(futureExp())}.refreshed`;
+      const fetchImpl: FetchLike = async (url, init) => {
+        if (url.includes('Auth/users')) {
+          logins += 1;
+          return new Response(JSON.stringify([{ userId: 5, userType: 3 }]), { status: 200 });
+        }
+        if (url.includes('Auth/token/refresh')) {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          refreshBodies.push(body);
+          return body.access_token === storedAccess && body.refresh_token === 'good-refresh'
+            ? new Response(JSON.stringify({ access_token: refreshed, refresh_token: 'r2' }), {
+                status: 200,
+              })
+            : new Response('invalid token pair', { status: 400 });
+        }
+        if (url.includes('Auth/token')) {
+          return new Response(
+            JSON.stringify({ access_token: `${jwt(futureExp())}.login`, refresh_token: 'r-login' }),
+            { status: 200 },
+          );
+        }
+        const auth = String(init.headers.Authorization ?? '').replace(/^Bearer /, '');
+        return auth === refreshed
+          ? new Response('{"ok":1}', { status: 200 })
+          : new Response('unauthorized', { status: 401 });
+      };
+
+      const client = new SchoolPassClient({ env: cacheEnv, fetchImpl });
+      await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+      expect(logins).toBe(0);
+      expect(refreshBodies).toHaveLength(1);
+      expect(refreshBodies[0]?.access_token).toBe(storedAccess);
+      const cached = createSessionCache(resolveConfig(cacheEnv), cacheEnv)!.load();
+      expect(cached?.tokens.refreshToken).toBe('r2');
+    }),
+  );
+
+  it(
+    'a transient refresh outage (503) does not destroy the cached refresh token',
+    withCacheDir(async (cacheEnv) => {
+      seed(cacheEnv, Date.now() - 60_000);
+      const s = server(503);
+      const client = new SchoolPassClient({ env: cacheEnv, fetchImpl: s.fetchImpl });
+      await expect(client.get('parent/profile')).rejects.toThrow(/503/);
+      expect(s.logins()).toBe(0);
+      const cached = createSessionCache(resolveConfig(cacheEnv), cacheEnv)!.load();
+      expect(cached?.tokens.refreshToken).toBe('dead-refresh');
+    }),
+  );
 });

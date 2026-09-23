@@ -144,13 +144,19 @@ describe('both halves are required', () => {
 });
 
 describe('tokenView', () => {
+  /** A mutable identity slot, standing in for the client's own field. */
+  function slot(initial?: CachedSession['identity']) {
+    let id = initial;
+    return { get: () => id, set: (next: CachedSession['identity']) => (id = next), peek: () => id };
+  }
+
   it('keeps the identity attached when the manager persists a refresh', () => {
     // TokenManager only knows about BearerTokens. Without the view re-attaching
     // the identity, a refresh would overwrite the file with half a session and
     // the NEXT restart would fall back to a full login for no reason.
     const cache = createSessionCache(config(), on())!;
     cache.save(session());
-    const view = tokenView(cache, { userId: 77, userType: 2 } as CachedSession['identity'])!;
+    const view = tokenView(cache, slot({ userId: 77, userType: 2 } as CachedSession['identity']))!;
 
     view.save({ accessToken: 'AT2', refreshToken: 'RT2', expiresAt: Date.now() + 7_200_000 });
 
@@ -159,24 +165,35 @@ describe('tokenView', () => {
     expect(back?.identity.userId).toBe(77);
   });
 
-  it('reads back only the token half', () => {
+  it('reads back the token half and restores the identity half into the slot', () => {
     const cache = createSessionCache(config(), on())!;
     cache.save(session());
-    const view = tokenView(cache, session().identity)!;
+    const id = slot();
+    const view = tokenView(cache, id)!;
     expect(view.load()).toEqual(expect.objectContaining({ accessToken: 'AT' }));
+    expect(id.peek()).toEqual(session().identity);
+  });
+
+  it('refuses to write half a session when no identity is known yet', () => {
+    const cache = createSessionCache(config(), on())!;
+    const view = tokenView(cache, slot())!;
+    expect(() =>
+      view.save({ accessToken: 'AT2', refreshToken: 'RT2', expiresAt: Date.now() + 1000 }),
+    ).toThrow(/identity/i);
+    expect(cache.load()).toBeNull();
   });
 
   it('returns null on an empty cache, and clears through to the file', () => {
     const cache = createSessionCache(config(), on())!;
-    const view = tokenView(cache, session().identity)!;
+    const view = tokenView(cache, slot(session().identity))!;
     expect(view.load()).toBeNull();
     cache.save(session());
-    view.clear();
+    view.clear!();
     expect(cache.load()).toBeNull();
   });
 
-  it('is null when there is no cache to view', () => {
-    expect(tokenView(null, session().identity)).toBeNull();
+  it('is undefined when there is no cache to view', () => {
+    expect(tokenView(null, slot(session().identity))).toBeUndefined();
   });
 });
 

@@ -110,23 +110,45 @@ export class SchoolPassClient {
         // the cache ignore a caller's configuration — and let the test suite
         // disable it through a channel the client was not actually consulting.
         const cache = createSessionCache(config, this.env);
-        const restored = cache?.load() ?? null;
-        const { identity, tokens } = restored ?? (await login(config, this.fetchImpl));
-        this.identity = identity;
-        this.currentAccessToken = tokens.accessToken;
-        if (restored === null && cache !== null) {
-          try {
-            cache.save({ identity, tokens });
-          } catch (err) {
-            reportCacheWriteFailure(err);
-          }
-        }
-        this.tokens = new TokenManager({
-          initial: tokens,
-          // The manager persists after every refresh, which is what stops the
-          // cached copy going stale — through a view that re-attaches the
-          // identity, so one file always holds a complete session.
-          persistence: tokenView(cache, identity) ?? undefined,
+        // The view restores the identity; the access token is restored here. The
+        // refresh contract is {schoolCode, access_token, refresh_token}, and the
+        // manager refreshes an expired restored record INSIDE getAccessToken()
+        // below — before that call's result could set currentAccessToken. Left
+        // empty, the server rejects the refresh as revoked, so every cold start
+        // with an expired access token threw away a good session for a login.
+        const view = tokenView(cache, {
+          get: () => this.identity,
+          set: (identity) => {
+            this.identity = identity;
+          },
+        });
+        const persistence = view && {
+          ...view,
+          load: () => {
+            const restored = view.load();
+            if (restored) this.currentAccessToken = restored.accessToken;
+            return restored;
+          },
+        };
+        // The login is handed to the manager as a BOOTSTRAP FUNCTION, not run
+        // here and passed in as tokens. Only the function form lets the manager
+        // recover on its own: when a refresh is rejected as revoked it clears the
+        // persisted record and re-runs this login. With eager tokens it has
+        // nothing to fall back on, so a dead refresh token restored from disk
+        // failed every call — and every restart — until session.json was
+        // deleted by hand (fleet-audit#14).
+        const tokens = new TokenManager({
+          initial: async () => {
+            const fresh = await login(config, this.fetchImpl);
+            this.identity = fresh.identity;
+            this.currentAccessToken = fresh.tokens.accessToken;
+            return fresh.tokens;
+          },
+          // The manager reads this once, persists after every login and refresh,
+          // and clears it when the refresh token is dead — through a view that
+          // carries the identity alongside, so one file always holds a
+          // complete session.
+          persistence,
           onPersistError: reportCacheWriteFailure,
           refresh: async (rt) => {
             const next = await refreshTokens(config, this.currentAccessToken, rt, this.fetchImpl);
@@ -134,6 +156,11 @@ export class SchoolPassClient {
             return next;
           },
         });
+        // Resolve a token now, so identity is populated before this returns
+        // (getMemberId() reads it behind a non-null assertion): a restored
+        // record supplies both halves; otherwise the bootstrap login does.
+        this.currentAccessToken = await tokens.getAccessToken();
+        this.tokens = tokens;
       })().finally(() => {
         this.bootstrapInFlight = undefined;
       });
@@ -141,17 +168,10 @@ export class SchoolPassClient {
     await this.bootstrapInFlight;
   }
 
-  /** Discard the current session so the next call re-bootstraps from scratch. */
-  private resetSession(): void {
-    this.tokens = undefined;
-    this.identity = undefined;
-    this.currentAccessToken = '';
-  }
-
   /**
    * Perform an authenticated request. Adds `Authorization` + `AppCode`, refreshes
    * proactively, and on a 401 refreshes once and replays once — falling back to a
-   * full re-login if the refresh token is dead. Throws {@link SchoolPassApiError}
+   * full re-login (and a fresh cache record) if the refresh token is dead. Throws {@link SchoolPassApiError}
    * on a non-2xx response.
    */
   async request(
@@ -173,21 +193,18 @@ export class SchoolPassClient {
         fetchImpl: this.fetchImpl,
       });
 
-    const token = await this.tokens!.getAccessToken();
-    this.currentAccessToken = token;
-    let res = await send(token);
-
-    if (res.status === 401) {
-      // Try a refresh-and-replay; if the refresh path is dead, re-login fully.
-      try {
-        await this.tokens!.refreshNow();
-        this.currentAccessToken = await this.tokens!.getAccessToken();
-      } catch {
-        this.resetSession();
-        await this.ensureSession();
-      }
-      res = await send(this.currentAccessToken);
-    }
+    // TokenManager.withAuth owns the 401 policy: refresh once and replay once,
+    // with no second refresh if a concurrent caller already rotated the token.
+    // A refresh the server rejects as revoked makes the manager clear the cache
+    // and re-run the login bootstrap itself; a transient refresh failure (5xx,
+    // network) surfaces instead, keeping the still-good refresh token. The
+    // manager only reads `status`, so the parsed response rides alongside.
+    let res!: Awaited<ReturnType<typeof send>>;
+    await this.tokens!.withAuth(async (token) => {
+      this.currentAccessToken = token;
+      res = await send(token);
+      return new Response(null, { status: res.status });
+    });
 
     if (res.status < 200 || res.status >= 300) {
       throw new SchoolPassApiError(
