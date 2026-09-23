@@ -62,7 +62,7 @@ email/password/school-code — never retry with a guess.
 | `schoolpass_list_pickup_changes(student_id, date?, view?)` | Pickup/dismissal changes for a student on a date (defaults today). |
 | `schoolpass_list_dismissal_locations(view?)` | The school's dismissal locations (car line, bus, aftercare, walkers…) with ids. |
 | `schoolpass_get_school_info(view?)` | Basic school info and per-school config. |
-| `schoolpass_submit_dismissal_change(student_id, date, change_type, …, confirm)` | Submit a dismissal/arrival change (absent, early dismissal, late arrival, move to carpool/bus/location). CONFIRM-GATED: without confirm:true returns a dry-run preview and makes no change; with confirm:true submits and re-reads the calendar to prove it landed. |
+| `schoolpass_submit_dismissal_change(student_id, date, change_type, …, confirm)` | Submit a dismissal/arrival change (absent, early dismissal, late arrival, move to carpool/bus/location). CONFIRM-GATED: without confirm:true returns a dry-run preview and makes no change; with confirm:true submits and re-reads the calendar to prove it landed (`verified:true`). `verified:false` means it WAS submitted but the re-read didn't confirm it — never resubmit; re-read the calendar. |
 | `schoolpass_cancel_dismissal_change(student_id, date, confirm)` | Cancel a change for a date, returning it to default. CONFIRM-GATED with a preview. |
 
 ## Response shape (`view`)

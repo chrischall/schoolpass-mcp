@@ -143,6 +143,10 @@ Traps, each observed live:
   would call an idempotent re-submit a failed write (nothing moves because the
   day is already in the requested state) while passing a write that landed as
   some *other* change. The tool reports that no-op case as `alreadyInPlace`.
+  Once the POST resolves the tool never errors: a match is `verified:true`;
+  a re-read that throws or does not (yet) show the change is `verified:false`
+  with a "do not resubmit" note, because a retried POST (`changeSeriesId: 0`)
+  can create a duplicate change series on the day.
 - `busStopId` is sent on every submit (the app does the same) but **no Bus
   change has been captured live**, so whether a bus move requires a stop id, and
   what id space it uses, is UNVERIFIED. The `bus_stop_id` tool argument passes
