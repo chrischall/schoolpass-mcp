@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.3](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.2...v1.0.3) (2026-09-23)
+
+
+### Bug Fixes
+
+* **auth:** name token-refresh errors SchoolPassRefreshError like the other SchoolPass errors ([#67](https://github.com/chrischall/schoolpass-mcp/issues/67)) ([ccd5861](https://github.com/chrischall/schoolpass-mcp/commit/ccd586116c7589730cea1fd0017c2cafc245dc5b))
+* **auth:** recover from a revoked refresh token instead of failing every call ([#63](https://github.com/chrischall/schoolpass-mcp/issues/63)) ([bd0e507](https://github.com/chrischall/schoolpass-mcp/commit/bd0e507b6ab4c9f10b89a3b5150e7b1746b33e6a))
+* **changes:** gate dismissal-change cancel as destructive and never fail a submitted change ([#66](https://github.com/chrischall/schoolpass-mcp/issues/66)) ([407a7ca](https://github.com/chrischall/schoolpass-mcp/commit/407a7ca81b0ce43195ef6f004c34a5bac5485661))
+
 ## [1.0.2](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.1...v1.0.2) (2026-09-23)
 
 
