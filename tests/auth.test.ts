@@ -235,8 +235,20 @@ describe('refreshToken', () => {
     expect(next.refreshToken).toBe('keep-me');
   });
 
-  it('throws on a failed refresh', async () => {
+  it('throws on a failed refresh, carrying the HTTP status', async () => {
+    // The status is what lets TokenManager tell a revoked refresh token (4xx:
+    // clear the cache and log in again) from an outage (5xx: keep the token).
     const { fetchImpl } = mockFetch(400, 'bad');
-    await expect(refreshToken(config, 'a', 'b', fetchImpl)).rejects.toThrow(/refresh failed/i);
+    const err = await refreshToken(config, 'a', 'b', fetchImpl).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/refresh failed/i);
+    expect((err as { status?: number }).status).toBe(400);
+  });
+
+  it('marks a 5xx refresh failure as transient in its hint', async () => {
+    const { fetchImpl } = mockFetch(503, 'down');
+    const err = await refreshToken(config, 'a', 'b', fetchImpl).catch((e: unknown) => e);
+    expect((err as { status?: number }).status).toBe(503);
+    expect((err as { hint?: string }).hint).toMatch(/retry/i);
   });
 });

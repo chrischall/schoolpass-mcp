@@ -242,6 +242,28 @@ export async function login(config: SchoolPassConfig, fetchImpl?: FetchLike): Pr
 }
 
 /**
+ * A rejected `Auth/token/refresh`. Carries the HTTP `status` because that is
+ * what `TokenManager` classifies the failure by: a 4xx means the refresh token
+ * is dead (it clears the cached session and re-runs the login), while a
+ * 5xx/429/408 is an outage (it keeps the still-good refresh token and surfaces
+ * the error). A status-less error would be read as "revoked" every time, so an
+ * upstream blip would destroy the cached session and burn a login.
+ */
+export class SchoolPassRefreshError extends McpToolError {
+  readonly status: number;
+
+  constructor(status: number) {
+    const transient = status >= 500 || status === 429 || status === 408;
+    super(`SchoolPass token refresh failed (HTTP ${status}).`, {
+      hint: transient
+        ? 'SchoolPass is having trouble right now; the session is kept — retry shortly.'
+        : 'The refresh token was rejected; the server logs in again automatically, so retry the call.',
+    });
+    this.status = status;
+  }
+}
+
+/**
  * Step 3: refresh. Shaped as a `TokenManager` refresh callback — it needs the
  * current access token as well as the refresh token, so the caller closes over
  * a getter for the former.
@@ -264,11 +286,7 @@ export async function refreshToken(
     fetchImpl,
   });
   if (res.status < 200 || res.status >= 300) {
-    // A failed refresh is not a credential-guessing risk, but a full re-login is
-    // the recovery — surface it clearly rather than looping.
-    throw new McpToolError(`SchoolPass token refresh failed (HTTP ${res.status}).`, {
-      hint: 'The refresh token likely expired; the next tool call will re-run a full login.',
-    });
+    throw new SchoolPassRefreshError(res.status);
   }
   const { accessToken, refreshToken: newRefresh } = extractTokens(res.body);
   return {

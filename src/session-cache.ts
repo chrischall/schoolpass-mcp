@@ -74,23 +74,46 @@ export function createSessionCache(
   });
 }
 
+/** Where the client keeps the identity half of its session. */
+export interface IdentitySlot {
+  get(): SchoolPassIdentity | undefined;
+  set(identity: SchoolPassIdentity): void;
+}
+
 /**
  * A {@link SyncStatePersistence} over just the TOKEN half of a cached session,
  * for handing to `TokenManager`.
  *
- * The manager owns the token lifecycle and persists after every refresh, which
- * is what keeps the cached copy from going stale — but it only knows about
- * `BearerTokens`. This view re-attaches the identity on the way to disk so one
- * file holds a complete, restorable session rather than half of one.
+ * The manager owns the token lifecycle: it reads this once, persists after every
+ * login and refresh (which keeps the cached copy from going stale), and clears
+ * it when a refresh token turns out to be revoked. It only knows about
+ * `BearerTokens`, so the view carries the identity across: a load restores the
+ * identity half into the client's slot, and a save re-attaches whatever identity
+ * the client holds NOW — which, after a re-login, is the fresh one — so one file
+ * always holds a complete, restorable session rather than half of one.
  */
 export function tokenView(
   cache: SyncStatePersistence<CachedSession> | null,
-  identity: SchoolPassIdentity,
-): SyncStatePersistence<BearerTokens> | null {
-  if (cache === null) return null;
+  identity: IdentitySlot,
+): SyncStatePersistence<BearerTokens> | undefined {
+  if (cache === null) return undefined;
   return {
-    load: () => cache.load()?.tokens ?? null,
-    save: (tokens) => cache.save({ identity, tokens }),
+    load: () => {
+      const rec = cache.load();
+      if (rec === null) return null;
+      identity.set(rec.identity);
+      return rec.tokens;
+    },
+    save: (tokens) => {
+      const id = identity.get();
+      // Unreachable in practice (the login sets the identity before the manager
+      // persists its tokens), but a token-only record would crash the restore
+      // path's getMemberId(); refuse it rather than write half a session.
+      if (id === undefined) {
+        throw new Error('no identity to cache alongside the tokens');
+      }
+      cache.save({ identity: id, tokens });
+    },
     clear: () => cache.clear(),
   };
 }
