@@ -259,6 +259,7 @@ export class SchoolPassRefreshError extends McpToolError {
         ? 'SchoolPass is having trouble right now; the session is kept — retry shortly.'
         : 'The refresh token was rejected; the server logs in again automatically, so retry the call.',
     });
+    this.name = 'SchoolPassRefreshError';
     this.status = status;
   }
 }
