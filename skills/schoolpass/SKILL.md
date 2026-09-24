@@ -57,7 +57,7 @@ email/password/school-code — never retry with a guess.
 | `schoolpass_whoami` | The parent identity the server signed in as (member id, user type, name). |
 | `schoolpass_list_students(view?)` | The parent's linked students — name, grade, home dismissal location, aftercare. Gives the `student_id` other tools need. |
 | `schoolpass_get_profile(view?)` | The parent account profile. |
-| `schoolpass_list_drivers(view?)` | Authorized pickup drivers, with their carpools. |
+| `schoolpass_list_drivers(include_carpool?, view?)` | Authorized pickup drivers. `include_carpool: true` adds the carpools each belongs to — other families' data, so compact drops their contact and vehicle fields; ask for `full` only when the user needs them. |
 | `schoolpass_get_calendar(student_id, start_date?, end_date?, view?)` | A student's arrival/dismissal calendar over a range (defaults today → 14 days out). |
 | `schoolpass_list_pickup_changes(student_id, date?, view?)` | Pickup/dismissal changes for a student on a date (defaults today). |
 | `schoolpass_list_dismissal_locations(view?)` | The school's dismissal locations (car line, bus, aftercare, walkers…) with ids. |

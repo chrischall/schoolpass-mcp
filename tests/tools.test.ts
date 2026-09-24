@@ -79,11 +79,81 @@ describe('parent tools', () => {
     await h.close();
   });
 
-  it('list_drivers requests carpool membership', async () => {
+  it('list_drivers does NOT pull carpool membership by default (fleet-audit#1107)', async () => {
+    // A carpool record is other families' data; it is opt-in, not on every
+    // "who are my drivers" question.
     const { client, gets } = fakeClient();
     const h = await createTestHarness((s) => registerParentTools(s, client));
     await h.callTool('schoolpass_list_drivers');
+    expect(gets[0]!.query).toMatchObject({ memberId: 5, includeCarpool: false });
+    await h.close();
+  });
+
+  it('list_drivers requests carpool membership when include_carpool is true', async () => {
+    const { client, gets } = fakeClient();
+    const h = await createTestHarness((s) => registerParentTools(s, client));
+    await h.callTool('schoolpass_list_drivers', { include_carpool: true });
     expect(gets[0]!.query).toMatchObject({ memberId: 5, includeCarpool: true });
+    await h.close();
+  });
+
+  /** A driver with a carpool whose members carry contact + vehicle fields. Fake data. */
+  const DRIVERS = [
+    {
+      driverId: 7,
+      firstName: 'Pat',
+      lastName: 'Guardian',
+      carpools: [
+        {
+          carpoolId: 900,
+          name: 'Oak St carpool',
+          members: [
+            {
+              firstName: 'Sam',
+              lastName: 'Neighbour',
+              role: 'driver',
+              cancelled: false,
+              status: 'active',
+              phone: '555-0100',
+              mobilePhone: '555-0101',
+              email: 'sam@example.com',
+              address: '1 Example St',
+              vehicle: { make: 'Car', model: 'X', licensePlate: 'ABC123', color: 'blue' },
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it('list_drivers compact drops carpool members\' contact and vehicle fields', async () => {
+    const { client } = fakeClient({ 'parent/parentdrivers': DRIVERS });
+    const h = await createTestHarness((s) => registerParentTools(s, client));
+    const res = parseToolResult<typeof DRIVERS>(await h.callTool('schoolpass_list_drivers', { include_carpool: true }));
+    const text = JSON.stringify(res);
+    for (const secret of ['555-0100', '555-0101', 'sam@example.com', 'Example St', 'ABC123']) {
+      expect(text).not.toContain(secret);
+    }
+    // Only contact/vehicle fields go — not a field that merely contains the
+    // letters of one (`cancelled` ⊃ "cell", `status` ⊃ "stat").
+    expect(res[0]!.carpools[0]!.members[0]).toEqual({
+      firstName: 'Sam',
+      lastName: 'Neighbour',
+      role: 'driver',
+      cancelled: false,
+      status: 'active',
+    });
+    // The carpool itself and the parent's own driver record are untouched.
+    expect(res[0]!.carpools[0]!.name).toBe('Oak St carpool');
+    expect(res[0]!.lastName).toBe('Guardian');
+    await h.close();
+  });
+
+  it('list_drivers full returns the carpool payload untouched', async () => {
+    const { client } = fakeClient({ 'parent/parentdrivers': DRIVERS });
+    const h = await createTestHarness((s) => registerParentTools(s, client));
+    const res = parseToolResult(await h.callTool('schoolpass_list_drivers', { include_carpool: true, view: 'full' }));
+    expect(res).toEqual(DRIVERS);
     await h.close();
   });
 

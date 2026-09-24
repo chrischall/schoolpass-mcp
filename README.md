@@ -17,7 +17,7 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 | `schoolpass_whoami` | The parent identity the server signed in as. |
 | `schoolpass_list_students` | Your linked students — name, grade, home dismissal location, aftercare. |
 | `schoolpass_get_profile` | The parent account profile. |
-| `schoolpass_list_drivers` | Authorized pickup drivers, with their carpools. |
+| `schoolpass_list_drivers` | Authorized pickup drivers; `include_carpool: true` adds their carpools (other families' contact/vehicle fields dropped unless `view: "full"`). |
 | `schoolpass_get_calendar` | A student's arrival/dismissal calendar over a date range. |
 | `schoolpass_list_pickup_changes` | Pickup/dismissal changes for a student on a date. |
 | `schoolpass_list_dismissal_locations` | The school's dismissal locations, with ids. |
