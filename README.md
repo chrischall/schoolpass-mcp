@@ -64,7 +64,10 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 - **Parent scope only.** A parent token cannot reach admin routes (visitor
   management, carline operations, reports, bus routing); those return `403`.
 - **Never retry a rejected login.** SchoolPass fronts its login with reCAPTCHA;
-  repeated failures can get the account challenged.
+  repeated failures can get the account challenged. A password SchoolPass
+  refuses (400/401) is tried once per process: later calls return the same
+  error without contacting SchoolPass until the configured credentials change
+  or the server restarts.
 - **No credentials, still boots.** The server starts without configuration and
   answers `tools/list`; the config error surfaces on the first tool call.
 

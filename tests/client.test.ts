@@ -537,3 +537,85 @@ describe('SchoolPassClient — dead refresh token with a cached session', () => 
     }),
   );
 });
+
+describe('SchoolPassClient — rejected credential latch (fleet-audit#959)', () => {
+  // SchoolPass fronts its login with reCAPTCHA. A rejected password must be
+  // sent ONCE per process — not again on every later tool call, healthcheck
+  // poll, or model retry after "check your password".
+
+  /** Auth/users answers `usersStatus`; counts every login attempt. */
+  function rejectingServer(usersStatus = 401) {
+    let attempts = 0;
+    let status = usersStatus;
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes('/version')) return new Response(JSON.stringify('ok'), { status: 200 });
+      if (url.includes('Auth/users')) {
+        attempts += 1;
+        return status === 200
+          ? new Response(JSON.stringify([{ userId: 5, userType: 3 }]), { status: 200 })
+          : new Response('invalid credentials', { status });
+      }
+      if (url.includes('Auth/token')) {
+        return new Response(JSON.stringify({ access_token: jwt(futureExp()), refresh_token: 'r1' }), { status: 200 });
+      }
+      return new Response('{"ok":1}', { status: 200 });
+    };
+    return { fetchImpl, attempts: () => attempts, setStatus: (s: number) => (status = s) };
+  }
+
+  it('does not re-send a rejected password on later calls', async () => {
+    const s = rejectingServer(401);
+    const client = new SchoolPassClient({ env, fetchImpl: s.fetchImpl });
+    const first = await client.get('parent/profile').catch((e: unknown) => e);
+    const second = await client.get('parent/profile').catch((e: unknown) => e);
+    const third = await client.get('parent/students').catch((e: unknown) => e);
+    expect(s.attempts()).toBe(1);
+    expect((first as Error).message).toMatch(/rejected/);
+    // The SAME rejection is rethrown, hint and all.
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+  });
+
+  it('a 400 latches too', async () => {
+    const s = rejectingServer(400);
+    const client = new SchoolPassClient({ env, fetchImpl: s.fetchImpl });
+    await client.get('parent/profile').catch(() => undefined);
+    await client.get('parent/profile').catch(() => undefined);
+    expect(s.attempts()).toBe(1);
+  });
+
+  it('the healthcheck does not re-send it either', async () => {
+    const s = rejectingServer(401);
+    const client = new SchoolPassClient({ env, fetchImpl: s.fetchImpl });
+    const h1 = await client.healthcheck();
+    const h2 = await client.healthcheck();
+    expect(h1.authenticated).toBe(false);
+    expect(h2.authenticated).toBe(false);
+    expect(h2.error).toMatch(/rejected/);
+    expect(s.attempts()).toBe(1);
+  });
+
+  it('does NOT latch a transient upstream failure (5xx) — that may be retried', async () => {
+    const s = rejectingServer(503);
+    const client = new SchoolPassClient({ env, fetchImpl: s.fetchImpl });
+    await client.get('parent/profile').catch(() => undefined);
+    s.setStatus(200);
+    await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+    expect(s.attempts()).toBe(2);
+  });
+
+  it('clears when the configured credentials change', async () => {
+    const s = rejectingServer(401);
+    const liveEnv: NodeJS.ProcessEnv = { ...env };
+    const client = new SchoolPassClient({ env: liveEnv, fetchImpl: s.fetchImpl });
+    await client.get('parent/profile').catch(() => undefined);
+    s.setStatus(200);
+    // Same credentials: still latched, no new attempt.
+    await expect(client.get('parent/profile')).rejects.toThrow(/rejected/);
+    expect(s.attempts()).toBe(1);
+    // The user fixes the password: one fresh attempt, which succeeds.
+    liveEnv.SCHOOLPASS_PASSWORD = 'corrected';
+    await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+    expect(s.attempts()).toBe(2);
+  });
+});
