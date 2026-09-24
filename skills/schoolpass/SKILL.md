@@ -62,8 +62,8 @@ email/password/school-code — never retry with a guess.
 | `schoolpass_list_pickup_changes(student_id, date?, view?)` | Pickup/dismissal changes for a student on a date (defaults today). |
 | `schoolpass_list_dismissal_locations(view?)` | The school's dismissal locations (car line, bus, aftercare, walkers…) with ids. |
 | `schoolpass_get_school_info(view?)` | Basic school info and per-school config. |
-| `schoolpass_submit_dismissal_change(student_id, date, change_type, …, confirm)` | Submit a dismissal/arrival change (absent, early dismissal, late arrival, move to carpool/bus/location). CONFIRM-GATED: without confirm:true returns a dry-run preview and makes no change; with confirm:true submits and re-reads the calendar to prove it landed (`verified:true`). `verified:false` means it WAS submitted but the re-read didn't confirm it — never resubmit; re-read the calendar. |
-| `schoolpass_cancel_dismissal_change(student_id, date, confirm)` | Cancel a change for a date, returning it to default. CONFIRM-GATED with a preview. |
+| `schoolpass_submit_dismissal_change(student_id, date, change_type, …, confirmToken?)` | Submit a dismissal/arrival change (absent, early dismissal, late arrival, move to carpool/bus/location). CONFIRM-GATED: a client that can show a prompt gets one; otherwise the first call makes no change and returns a preview (the child by name, the date, the change, the exact request) plus a `confirmToken`, and only a repeat call with that token submits. Once submitted it re-reads the calendar to prove it landed (`verified:true`). `verified:false` means it WAS submitted but the re-read didn't confirm it; `submitted:"unknown"` means the request timed out and MAY have landed — in both cases never resubmit; re-read the calendar. |
+| `schoolpass_cancel_dismissal_change(student_id, date, change_series_id?, confirmToken?)` | Cancel a change for a date, returning it to default. CONFIRM-GATED the same way; the token is bound to the previewed change. |
 
 ## Response shape (`view`)
 
@@ -116,9 +116,14 @@ and the suite stayed green.
   management, carline operations, reports, bus routing); those return `403` with
   a hint saying so.
 - **Writes are confirm-gated.** `schoolpass_submit_dismissal_change` and
-  `schoolpass_cancel_dismissal_change` change a child's real dismissal. Without
-  `confirm: true` they make no network call and return a preview — always show
-  the user the preview and get explicit confirmation before sending.
+  `schoolpass_cancel_dismissal_change` change a child's real dismissal. On a
+  client without MCP elicitation the first call makes no change and returns a
+  preview plus a `confirmToken` — always show the user the preview and get
+  explicit approval before calling again with the token. The token is
+  single-use, expires, and is bound to the arguments and to the day as it was
+  read: if the day changed in between, the call is refused with a fresh
+  preview. `MCP_CONFIRM_MODE` (`ask-user` default / `auto` / `refuse`) governs
+  the fallback.
   `change_type` is one of absent / late_arrival / early_dismissal / carpool /
   activity / bus / virtual; `move_to_id` is a dismissal-location id
   (schoolpass_list_dismissal_locations) or a carpool id (from the calendar).

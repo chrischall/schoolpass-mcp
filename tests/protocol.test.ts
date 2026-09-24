@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { withCallSignal } from '@chrischall/mcp-utils';
 import {
+  REQUEST_TIMEOUT_MS,
   SchoolPassApiError,
+  SchoolPassTimeoutError,
   apiBaseUrl,
   buildHeaders,
   sendRequest,
@@ -111,5 +114,91 @@ describe('sendRequest', () => {
     });
     expect(res.body).toBe('');
     expect(res.json).toBe(false);
+  });
+});
+
+describe('sendRequest — deadline and cancellation', () => {
+  /** A fetch that honours its signal and otherwise never answers. */
+  const stalled: FetchLike = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(init.signal!.reason as Error), { once: true });
+    });
+
+  /** A fetch that IGNORES its signal and never answers. */
+  const deaf: FetchLike = () => new Promise(() => {});
+
+  it('passes an AbortSignal to fetch on every request', async () => {
+    let seen: AbortSignal | undefined;
+    const fetchImpl: FetchLike = async (_url, init) => {
+      seen = init.signal;
+      return new Response('{}', { status: 200 });
+    };
+    await sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl });
+    expect(seen).toBeInstanceOf(AbortSignal);
+    expect(seen?.aborted).toBe(false);
+  });
+
+  it('has a 30 s default deadline', () => {
+    expect(REQUEST_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it('gives up on a stalled connection with a SchoolPassTimeoutError naming the path', async () => {
+    const err = await sendRequest('https://busapi-x.school-pass.net/api/studentchange?schoolCode=1', {
+      method: 'POST',
+      headers: {},
+      body: { a: 1 },
+      fetchImpl: stalled,
+      timeoutMs: 20,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SchoolPassTimeoutError);
+    expect((err as Error).message).toContain('studentchange');
+    expect((err as Error).message).not.toContain('schoolCode');
+    expect((err as SchoolPassTimeoutError).timeoutMs).toBe(20);
+    // TokenManager tells an outage from a dead credential by walking `cause`.
+    expect(((err as Error).cause as Error).name).toBe('TimeoutError');
+  });
+
+  it('holds the deadline even when the fetch implementation ignores the signal', async () => {
+    const err = await sendRequest('http://x/api/y', {
+      method: 'GET',
+      headers: {},
+      fetchImpl: deaf,
+      timeoutMs: 20,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SchoolPassTimeoutError);
+  });
+
+  it('applies the deadline to the body read too', async () => {
+    // Headers arrive, the body never does. A deadline that only covered the
+    // handshake would still let this hang.
+    const fetchImpl: FetchLike = async () =>
+      new Response(new ReadableStream({ start() {} }), { status: 200 });
+    const err = await sendRequest('http://x/api/y', {
+      method: 'GET',
+      headers: {},
+      fetchImpl,
+      timeoutMs: 20,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SchoolPassTimeoutError);
+  });
+
+  it('honours the tool call’s own cancellation, and reports THAT — not a timeout', async () => {
+    const controller = new AbortController();
+    const pending = withCallSignal(controller.signal, () =>
+      sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl: stalled, timeoutMs: 5_000 }),
+    );
+    setTimeout(() => controller.abort(), 5);
+    const err = await pending.catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(SchoolPassTimeoutError);
+    expect((err as Error).name).toBe('AbortError');
+  });
+
+  it('fails fast when the call was cancelled before the request started, even on a deaf fetch', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const err = await withCallSignal(controller.signal, () =>
+      sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl: deaf, timeoutMs: 5_000 }),
+    ).catch((e: unknown) => e);
+    expect((err as Error).name).toBe('AbortError');
   });
 });
