@@ -215,3 +215,43 @@ describe('reportCacheWriteFailure', () => {
     }
   });
 });
+
+describe('tokenView — only what a restore needs is persisted (fleet-audit#1106)', () => {
+  /** A full Auth/users identity, with extra upstream fields in `raw`. Fake data. */
+  const fullIdentity = {
+    userId: 77,
+    userType: 3,
+    firstName: 'Pat',
+    lastName: 'Example',
+    email: 'parent@example.com',
+    raw: { phone: '555-0100', address: '1 Example St', role: 'parent' },
+  };
+
+  it('writes the identity projection — no raw record, no email', () => {
+    const cache = createSessionCache(config(), on())!;
+    let id: CachedSession['identity'] | undefined = fullIdentity;
+    const view = tokenView(cache, { get: () => id, set: (n) => (id = n) })!;
+    view.save({ accessToken: 'AT', refreshToken: 'RT', expiresAt: Date.now() + 1000 });
+
+    const onDisk = readFileSync(cacheFile(dir), 'utf8');
+    expect(onDisk).not.toContain('555-0100');
+    expect(onDisk).not.toContain('Example St');
+    expect(onDisk).not.toContain('"raw"');
+    expect(onDisk).not.toContain('"email"');
+    expect(createSessionCache(config(), on())!.load()?.identity).toEqual({
+      userId: 77,
+      userType: 3,
+      firstName: 'Pat',
+      lastName: 'Example',
+    });
+  });
+
+  it('drops raw/email from a record written by an older version on restore', () => {
+    const cache = createSessionCache(config(), on())!;
+    cache.save(session({ identity: fullIdentity }));
+    let id: CachedSession['identity'] | undefined;
+    const view = tokenView(cache, { get: () => id, set: (n) => (id = n) })!;
+    view.load();
+    expect(id).toEqual({ userId: 77, userType: 3, firstName: 'Pat', lastName: 'Example' });
+  });
+});

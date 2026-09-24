@@ -21,6 +21,22 @@ export interface CachedSession {
   tokens: BearerTokens;
 }
 
+/**
+ * The identity fields worth keeping on disk: the two a restore dereferences
+ * (`userId`, `userType`) plus the name `whoami` / `healthcheck` report. The
+ * raw `Auth/users` record (whatever SchoolPass returns for the parent) and the
+ * email (already in the environment) are NOT persisted — retention beyond need
+ * in a file that outlives the process.
+ */
+export function projectIdentity(identity: SchoolPassIdentity): SchoolPassIdentity {
+  return {
+    userId: identity.userId,
+    userType: identity.userType,
+    ...(identity.firstName === undefined ? {} : { firstName: identity.firstName }),
+    ...(identity.lastName === undefined ? {} : { lastName: identity.lastName }),
+  };
+}
+
 /** Where the session is cached between runs. */
 export function sessionCachePath(env: NodeJS.ProcessEnv = process.env): string {
   return resolveStateFile({
@@ -101,7 +117,10 @@ export function tokenView(
     load: () => {
       const rec = cache.load();
       if (rec === null) return null;
-      identity.set(rec.identity);
+      // Projected on the way in too, so a record written by an older version
+      // (with the raw record) is not carried back into memory — and the next
+      // save rewrites the file trimmed.
+      identity.set(projectIdentity(rec.identity));
       return rec.tokens;
     },
     save: (tokens) => {
@@ -112,7 +131,7 @@ export function tokenView(
       if (id === undefined) {
         throw new Error('no identity to cache alongside the tokens');
       }
-      cache.save({ identity: id, tokens });
+      cache.save({ identity: projectIdentity(id), tokens });
     },
     clear: () => cache.clear(),
   };

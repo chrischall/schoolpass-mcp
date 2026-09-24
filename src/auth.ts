@@ -43,8 +43,11 @@ export interface SchoolPassIdentity {
   firstName?: string;
   lastName?: string;
   email?: string;
-  /** The raw record, so callers can inspect fields we did not normalize. */
-  raw: Record<string, unknown>;
+  /**
+   * The raw record, so callers can inspect fields we did not normalize. Present
+   * after a live login only — never persisted, so absent on a restored session.
+   */
+  raw?: Record<string, unknown>;
 }
 
 /** Fallback access-token lifetime when the JWT carries no usable `exp` claim. */

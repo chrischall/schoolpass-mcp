@@ -144,8 +144,10 @@ export class SchoolPassClient {
         // with an expired access token threw away a good session for a login.
         const view = tokenView(cache, {
           get: () => this.identity,
+          // The cache does not persist the email (it is already in the
+          // environment), so a restored identity takes the configured one.
           set: (identity) => {
-            this.identity = identity;
+            this.identity = { ...identity, email: identity.email ?? config.email };
           },
         });
         const persistence = view && {

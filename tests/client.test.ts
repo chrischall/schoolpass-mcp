@@ -338,6 +338,9 @@ describe('SchoolPassClient — session cache hit', () => {
       const b = new SchoolPassClient({ fetchImpl: second.fetchImpl, env: cacheEnv });
       await expect(b.getMemberId()).resolves.toBe(5);
       expect(second.logins()).toBe(0);
+      // The email is not persisted (fleet-audit#1106); a restored identity
+      // reports the configured login email instead of losing it.
+      expect((await b.getIdentity()).email).toBe(env.SCHOOLPASS_EMAIL);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
