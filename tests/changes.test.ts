@@ -659,3 +659,86 @@ describe('write-tool annotations', () => {
     await h.close();
   });
 });
+
+describe('schoolpass_submit_dismissal_change — preview wording', () => {
+  /** A fake client whose student list and calendar are scripted per test. */
+  function previewClient(opts: { students?: unknown; calendar?: unknown }): {
+    client: SchoolPassClient;
+    submits: unknown[];
+  } {
+    const submits: unknown[] = [];
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() {
+        return 15348;
+      },
+      async submitStudentChange(body: unknown) {
+        submits.push(body);
+        return { success: true };
+      },
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return opts.students ?? STUDENTS;
+        return opts.calendar ?? { dailyList: [DEFAULT_CARPOOL] };
+      },
+    } as unknown as SchoolPassClient;
+    return { client, submits };
+  }
+
+  it('echoes every optional detail of the change, so the parent approves what will be sent', async () => {
+    const { client, submits } = previewClient({});
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278,
+      date: '2026-09-14',
+      change_type: 'early_dismissal',
+      notes: 'Dentist appointment',
+      pickup_dropoff_person: 'Grandparent Example',
+      will_return: true,
+      time_of_day: '13:15',
+    });
+    const res = parseToolResult<PhaseOne>(raw);
+    expect(res.status).toBe('confirmation-required');
+    expect(res.preview.change).toEqual({
+      type: 'early_dismissal',
+      side: 'departure',
+      notes: 'Dentist appointment',
+      pickupDropoffPerson: 'Grandparent Example',
+      willReturn: true,
+      timeOfDay: '13:15',
+    });
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('shows a wire change/side code it has no word for as the raw number, rather than dropping it', async () => {
+    const { client } = previewClient({
+      calendar: {
+        dailyList: [{ ...DEFAULT_CARPOOL, studentChangeType: 99, adType: 42, description: 'Something new' }],
+      },
+    });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = parseToolResult<PhaseOne>(await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS));
+    expect(res.preview.currentDay).toEqual([
+      expect.objectContaining({ change: '99', side: '42', description: 'Something new' }),
+    ]);
+    await h.close();
+  });
+
+  it('falls back to "student <id>" when the parent’s record for the child carries no name', async () => {
+    const { client } = previewClient({ students: [{ id: 11278, firstName: '', lastName: null }] });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = parseToolResult<PhaseOne>(await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS));
+    expect(res.preview.student).toEqual({ id: 11278, name: 'student 11278' });
+    await h.close();
+  });
+
+  it('refuses every student — before any write — when the student list is not a list', async () => {
+    const { client, submits } = previewClient({ students: { error: 'unexpected shape' } });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS);
+    expect(raw.isError).toBe(true);
+    expect(raw.content[0]).toMatchObject({ type: 'text', text: expect.stringMatching(/not one of this parent/) });
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+});
