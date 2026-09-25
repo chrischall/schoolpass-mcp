@@ -9,7 +9,7 @@
  */
 
 import { toolAnnotations } from '@chrischall/mcp-utils';
-import { viewArg, viewResponse } from '../view.js';
+import { stripCarpoolContacts, viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { ENDPOINTS } from '../protocol.js';
@@ -65,8 +65,9 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
     'schoolpass_list_drivers',
     {
       description:
-        'List the authorized pickup drivers registered on the parent account, optionally including ' +
-        'the carpools each belongs to.',
+        'List the authorized pickup drivers registered on the parent account. Pass include_carpool: true ' +
+        'to also get the carpools each belongs to — those records describe OTHER families, so on the ' +
+        'default compact view their contact and vehicle fields are dropped (view "full" keeps them).',
       annotations: toolAnnotations({
         title: 'List drivers',
         readOnly: true,
@@ -74,16 +75,20 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         openWorld: true,
       }),
       inputSchema: z.object({
+        include_carpool: z
+          .boolean()
+          .default(false)
+          .describe('Also return the carpools each driver belongs to (other families\' data). Default false.'),
         view: viewArg(),
       }),
     },
-    async ({ view }) => {
+    async ({ include_carpool, view }) => {
       const memberId = await client.getMemberId();
       const data = await client.get(ENDPOINTS.parentDrivers, {
         memberId,
-        includeCarpool: true,
+        includeCarpool: include_carpool,
       });
-      return viewResponse(view, data);
+      return viewResponse(view, data, { compact: (d) => stripCarpoolContacts(d) });
     },
   );
 }

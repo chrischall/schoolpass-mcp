@@ -43,8 +43,11 @@ export interface SchoolPassIdentity {
   firstName?: string;
   lastName?: string;
   email?: string;
-  /** The raw record, so callers can inspect fields we did not normalize. */
-  raw: Record<string, unknown>;
+  /**
+   * The raw record, so callers can inspect fields we did not normalize. Present
+   * after a live login only — never persisted, so absent on a restored session.
+   */
+  raw?: Record<string, unknown>;
 }
 
 /** Fallback access-token lifetime when the JWT carries no usable `exp` claim. */
@@ -62,6 +65,33 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v !== '' ? v : undefined;
 }
 
+/**
+ * A non-2xx from `Auth/users` or `Auth/token`. When {@link credentialRejected}
+ * (400/401) the password itself was refused, and the client LATCHES this error
+ * for the process: re-sending a refused password on every later call is what
+ * gets a reCAPTCHA-fronted account challenged (see module doc).
+ */
+export class SchoolPassAuthRejectedError extends McpToolError {
+  readonly status: number;
+
+  constructor(status: number, path: string, detail: string) {
+    super(`SchoolPass login was rejected (HTTP ${status} on ${path}).`, {
+      hint:
+        status === 400 || status === 401
+          ? 'Check SCHOOLPASS_EMAIL / SCHOOLPASS_PASSWORD / SCHOOLPASS_SCHOOL_CODE. Do NOT retry with guesses — repeated failures can trigger a captcha challenge on the account. The server will not try this password again until its configuration changes or it restarts.'
+          : 'The auth endpoint returned an unexpected status; treat as a transient upstream error and retry later.',
+      cause: detail,
+    });
+    this.name = 'SchoolPassAuthRejectedError';
+    this.status = status;
+  }
+
+  /** The credentials themselves were refused — as opposed to an upstream blip. */
+  get credentialRejected(): boolean {
+    return this.status === 400 || this.status === 401;
+  }
+}
+
 /** Throw a rejection that must NOT be retried in a loop (see module doc). */
 function authRejected(status: number, path: string, body: unknown): never {
   const detail =
@@ -70,16 +100,7 @@ function authRejected(status: number, path: string, body: unknown): never {
       : typeof (body as { message?: unknown })?.message === 'string'
         ? (body as { message: string }).message
         : JSON.stringify(body);
-  throw new McpToolError(
-    `SchoolPass login was rejected (HTTP ${status} on ${path}).`,
-    {
-      hint:
-        status === 400 || status === 401
-          ? 'Check SCHOOLPASS_EMAIL / SCHOOLPASS_PASSWORD / SCHOOLPASS_SCHOOL_CODE. Do NOT retry with guesses — repeated failures can trigger a captcha challenge on the account.'
-          : 'The auth endpoint returned an unexpected status; treat as a transient upstream error and retry later.',
-      cause: detail,
-    },
-  );
+  throw new SchoolPassAuthRejectedError(status, path, detail);
 }
 
 /** Normalize one raw `Auth/users` record into a {@link SchoolPassIdentity}. */

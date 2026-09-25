@@ -31,12 +31,47 @@ const NOTE =
 export const viewArg = (): ReturnType<typeof viewParam> => viewParam(SPS_VIEWS, { note: NOTE });
 
 /**
+ * Keys that carry another family's contact or vehicle details. Matched only
+ * INSIDE a carpool subtree (see {@link stripCarpoolContacts}).
+ */
+const CARPOOL_CONTACT_KEY =
+  /phone|mobile|^cell|e-?mail|address|street|^city$|^state$|zip|postal|vehicle|(make|model)$|licen[cs]e|plate|colou?r/i;
+
+/**
+ * Drop contact and vehicle fields from everything under a carpool key.
+ *
+ * A carpool record from `parent/parentdrivers` describes OTHER parents — the
+ * other members of the carpool. What the parent asking "who are my drivers"
+ * needs from it is who is in the carpool, not those families' phone numbers,
+ * addresses or cars. Like {@link stripMediaUrls} this is subtractive: it drops
+ * only fields whose names say they are contact/vehicle data, keeps everything
+ * else, and leaves the parent's own driver records (outside any carpool key)
+ * alone. `full` skips it.
+ */
+export function stripCarpoolContacts(data: unknown, inCarpool = false): unknown {
+  if (Array.isArray(data)) return data.map((d) => stripCarpoolContacts(d, inCarpool));
+  if (data === null || typeof data !== 'object') return data;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (inCarpool && CARPOOL_CONTACT_KEY.test(key)) continue;
+    out[key] = stripCarpoolContacts(value, inCarpool || /carpool/i.test(key));
+  }
+  return out;
+}
+
+/**
  * Answer in the requested rung.
  *
  * Only ever called from a READ tool. A write's response is a receipt — an id,
  * a status — with nothing to strip and everything to keep.
  */
-export function viewResponse(view: string | undefined, data: unknown): ReturnType<typeof minifiedResult> {
+export function viewResponse(
+  view: string | undefined,
+  data: unknown,
+  opts: { compact?: (data: unknown) => unknown } = {},
+): ReturnType<typeof minifiedResult> {
   const rung: View = resolveView(view, SPS_VIEWS);
-  return minifiedResult(rung === 'compact' ? stripMediaUrls(data) : data);
+  if (rung !== 'compact') return minifiedResult(data);
+  const stripped = stripMediaUrls(data);
+  return minifiedResult(opts.compact ? opts.compact(stripped) : stripped);
 }

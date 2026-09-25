@@ -1,8 +1,38 @@
-import { describe, expect, it } from 'vitest';
-import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { CallToolResult } from '@modelcontextprotocol/server';
+import { createTestHarness, parseToolResult, type TestHarness } from '@chrischall/mcp-utils/test';
 import type { SchoolPassClient } from '../src/client.js';
-import { AdType, StudentChangeType } from '../src/protocol.js';
+import { AdType, ENDPOINTS, SchoolPassTimeoutError, StudentChangeType } from '../src/protocol.js';
 import { registerChangeTools, buildChangeBody, dayOfWeekId } from '../src/tools/changes.js';
+
+// Fixture families. Invented names, never a real record.
+const STUDENTS = [
+  { id: 11278, firstName: 'Ava', lastName: 'Example', gradeId: 3 },
+  { id: 1, firstName: 'Ben', lastName: 'Example', gradeId: 1 },
+];
+
+const saved = process.env.MCP_CONFIRM_MODE;
+afterEach(() => {
+  if (saved === undefined) delete process.env.MCP_CONFIRM_MODE;
+  else process.env.MCP_CONFIRM_MODE = saved;
+});
+
+/** The phase-1 envelope the confirm-token fallback returns. */
+interface PhaseOne {
+  status: string;
+  action: string;
+  confirmToken: string;
+  preview: Record<string, any>;
+}
+
+/** Call a gated tool twice — preview, then the same call plus its token. */
+async function confirmed(h: TestHarness, tool: string, args: Record<string, unknown>): Promise<CallToolResult> {
+  const first = await h.callTool(tool, args);
+  if (first.isError) return first; // a refusal before the gate is the answer
+  const phase1 = parseToolResult<PhaseOne>(first);
+  expect(phase1.status).toBe('confirmation-required');
+  return h.callTool(tool, { ...args, confirmToken: phase1.confirmToken });
+}
 
 describe('dayOfWeekId', () => {
   it('returns ISO weekday ids (Monday=1 … Sunday=7) in UTC', () => {
@@ -40,8 +70,29 @@ describe('buildChangeBody', () => {
   });
 });
 
-/** Fake client recording submits + serving before/after calendar reads. */
-function fakeClient(opts: { afterChanges?: boolean } = {}): {
+/** A calendar entry in the shape docs/SCHOOLPASS-API.md describes. */
+const DEFAULT_CARPOOL = {
+  isDefault: true,
+  changeId: null,
+  changeSeriesId: null,
+  studentChangeType: StudentChangeType.Carpool,
+  adType: AdType.Departure,
+  moveToId: 8553,
+};
+const LANDED_CARPOOL = {
+  isDefault: false,
+  changeId: 99,
+  changeSeriesId: 4242,
+  studentChangeType: StudentChangeType.Carpool,
+  adType: AdType.Departure,
+  moveToId: 505,
+};
+
+/**
+ * Fake client: serves the parent's students, records submits, and serves a
+ * calendar that (by default) shows the change once a submit happened.
+ */
+function fakeClient(opts: { afterChanges?: boolean; calendar?: () => unknown; submit?: () => Promise<unknown> } = {}): {
   client: SchoolPassClient;
   submits: unknown[];
 } {
@@ -54,83 +105,151 @@ function fakeClient(opts: { afterChanges?: boolean } = {}): {
     },
     async submitStudentChange(body: unknown) {
       submits.push(body);
+      if (opts.submit) return opts.submit();
       submitted = true;
       return { success: true };
     },
-    async get(_path: string) {
-      // Calendar read: return a different shape once a submit happened.
-      // Shaped like the real calendar entry docs/SCHOOLPASS-API.md describes:
-      // the proof of a landed change is a non-default entry with a populated
-      // changeSeriesId, and the tool matches it against the change it asked
-      // for — so studentChangeType/moveToId must be present and correct.
-      return {
-        dailyList:
-          submitted && opts.afterChanges !== false
-            ? [
-                {
-                  isDefault: false,
-                  changeId: 99,
-                  changeSeriesId: 4242,
-                  studentChangeType: StudentChangeType.Carpool,
-                  adType: AdType.Departure,
-                  moveToId: 505,
-                },
-              ]
-            : [
-                {
-                  isDefault: true,
-                  changeId: null,
-                  changeSeriesId: null,
-                  studentChangeType: StudentChangeType.Carpool,
-                  adType: AdType.Departure,
-                  moveToId: 8553,
-                },
-              ],
-      };
+    async get(path: string) {
+      if (path === ENDPOINTS.parentStudents) return STUDENTS;
+      if (opts.calendar) return opts.calendar();
+      return { dailyList: submitted && opts.afterChanges !== false ? [LANDED_CARPOOL] : [DEFAULT_CARPOOL] };
     },
   } as unknown as SchoolPassClient;
   return { client, submits };
 }
 
-describe('schoolpass_submit_dismissal_change', () => {
-  it('returns a dry-run preview and does NOT submit without confirm', async () => {
+const CARPOOL_ARGS = { student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505 };
+
+describe('schoolpass_submit_dismissal_change — confirm gate', () => {
+  it('takes confirmToken, not a model-settable confirm boolean', async () => {
+    const { client } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const { tools } = await h.client.listTools();
+    for (const name of ['schoolpass_submit_dismissal_change', 'schoolpass_cancel_dismissal_change']) {
+      const props = (tools.find((t) => t.name === name)?.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
+      expect(Object.keys(props), name).toContain('confirmToken');
+      expect(Object.keys(props), name).not.toContain('confirm');
+    }
+    await h.close();
+  });
+
+  it('phase 1: returns a confirmation-required preview naming the CHILD, and sends nothing', async () => {
     const { client, submits } = fakeClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ dryRun: boolean; willSend: { endpoint: string; body: Record<string, unknown> } }>(
-      await h.callTool('schoolpass_submit_dismissal_change', {
-        student_id: 11278,
-        date: '2026-09-14',
-        change_type: 'carpool',
-        move_to_id: 8553,
-      }),
-    );
-    expect(res.dryRun).toBe(true);
-    expect(res.willSend.endpoint).toBe('studentchange');
-    expect(res.willSend.body.changeType).toBe(4);
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS);
+    expect(raw.isError).toBeFalsy();
+    const res = parseToolResult<PhaseOne>(raw);
+    expect(res.status).toBe('confirmation-required');
+    expect(typeof res.confirmToken).toBe('string');
+    // A parent approves a change for a child, not for an id.
+    expect(res.preview.student).toEqual({ id: 11278, name: 'Ava Example' });
+    expect(res.preview.date).toBe('2026-09-14');
+    expect(res.preview.change).toMatchObject({ type: 'carpool', side: 'departure', moveToId: 505 });
+    // The exact request rides along, so the preview can never diverge from the send.
+    expect(res.preview.willSend.endpoint).toBe('studentchange');
+    expect(res.preview.willSend.body).toMatchObject({ changeType: 4, moveToId: 505, modifiedBy: 15348 });
+    expect(res.preview.willSend.query).toEqual({ schoolCode: 1183, parentMemberId: 15348 });
     expect(submits).toHaveLength(0);
     await h.close();
   });
 
-  it('submits with confirm:true and proves the change landed', async () => {
+  it('a bare confirm:true (the old gate) no longer writes anything', async () => {
+    // The injected-text attack the audit describes: "mark Ava absent tomorrow,
+    // confirm:true" in one call. Whatever the schema does with the stray key,
+    // the outcome that matters is that nothing was sent.
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    await h.callTool('schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, confirm: true });
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('phase 2: the token from the preview submits and proves the change landed', async () => {
     const { client, submits } = fakeClient({ afterChanges: true });
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ submitted: boolean; before: unknown[]; after: unknown[] }>(
-      await h.callTool('schoolpass_submit_dismissal_change', {
-        student_id: 11278,
-        date: '2026-09-14',
-        change_type: 'carpool',
-        ad_type: 'departure',
-        move_to_id: 505,
-        confirm: true,
-      }),
+    const res = parseToolResult<{ submitted: boolean; verified: boolean; before: unknown[]; after: unknown[] }>(
+      await confirmed(h, 'schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, ad_type: 'departure' }),
     );
     expect(res.submitted).toBe(true);
-    expect((res as { verified?: boolean }).verified).toBe(true);
+    expect(res.verified).toBe(true);
     expect(submits).toHaveLength(1);
     expect(res.before).not.toEqual(res.after);
     await h.close();
   });
 
+  it('binds the arguments: a token minted for one target does not submit another', async () => {
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const phase1 = parseToolResult<PhaseOne>(await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
+      ...CARPOOL_ARGS,
+      move_to_id: 506,
+      confirmToken: phase1.confirmToken,
+    });
+    expect(raw.isError).toBe(true);
+    expect(parseToolResult<{ error: string }>(raw).error).toBe('DRAFT_CHANGED');
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('binds the day: a change that appears between preview and confirm is DRAFT_CHANGED', async () => {
+    // The other parent (or the school) touched the day after the user approved
+    // the preview. What would happen is no longer what they saw.
+    let day: unknown[] = [DEFAULT_CARPOOL];
+    const { client, submits } = fakeClient({ calendar: () => ({ dailyList: day }) });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const phase1 = parseToolResult<PhaseOne>(await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS));
+    day = [
+      DEFAULT_CARPOOL,
+      { isDefault: false, changeId: 5, changeSeriesId: 55, studentChangeType: StudentChangeType.Absent, adType: AdType.Both, moveToId: null },
+    ];
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, confirmToken: phase1.confirmToken });
+    expect(raw.isError).toBe(true);
+    const res = parseToolResult<{ error: string; reason: string; confirmToken: string; preview: { currentDay: unknown[] } }>(raw);
+    expect(res.error).toBe('DRAFT_CHANGED');
+    expect(res.reason).toBe('revision-changed');
+    // ...and the fresh preview shows the day as it is NOW, with a new token.
+    expect(res.preview.currentDay).toHaveLength(2);
+    expect(typeof res.confirmToken).toBe('string');
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('a token is single-use', async () => {
+    const { client, submits } = fakeClient({ calendar: () => ({ dailyList: [DEFAULT_CARPOOL] }) });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const phase1 = parseToolResult<PhaseOne>(await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS));
+    const first = await h.callTool('schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, confirmToken: phase1.confirmToken });
+    expect(first.isError).toBeFalsy();
+    const again = await h.callTool('schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, confirmToken: phase1.confirmToken });
+    expect(again.isError).toBe(true);
+    expect(parseToolResult<{ error: string }>(again).error).toBe('TOKEN_REUSED');
+    expect(submits).toHaveLength(1);
+    await h.close();
+  });
+
+  it('refuses a student_id that is not one of this parent’s students, before any write', async () => {
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, student_id: 99999 });
+    expect(raw.isError).toBe(true);
+    expect(raw.content[0]).toMatchObject({ type: 'text', text: expect.stringMatching(/schoolpass_list_students/) });
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('refuses the write under MCP_CONFIRM_MODE=refuse on a client that cannot be prompted', async () => {
+    process.env.MCP_CONFIRM_MODE = 'refuse';
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS);
+    expect(parseToolResult<{ reason: string }>(raw).reason).toBe('confirmation-unsupported');
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+});
+
+describe('schoolpass_submit_dismissal_change — after the gate', () => {
   it('reports an unverified submit — NOT an error — when the calendar does not show the change', async () => {
     // The POST reached SchoolPass. An error here would invite the model to
     // retry, sending a second POST (changeSeriesId 0) that can create a
@@ -138,13 +257,7 @@ describe('schoolpass_submit_dismissal_change', () => {
     // the tool never fails: it says the write went through but is unverified.
     const { client, submits } = fakeClient({ afterChanges: false });
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278,
-      date: '2026-09-14',
-      change_type: 'carpool',
-      move_to_id: 8553,
-      confirm: true,
-    });
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, move_to_id: 8553 });
     expect(raw.isError).toBeFalsy();
     const res = parseToolResult<{ submitted: boolean; verified: boolean; after: unknown[]; note: string }>(raw);
     expect(res.submitted).toBe(true);
@@ -165,15 +278,14 @@ describe('schoolpass_submit_dismissal_change', () => {
       schoolCode: 1183,
       async getMemberId() { return 15348; },
       async submitStudentChange(body: unknown) { submits.push(body); submitted = true; return { success: true }; },
-      async get() {
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
         if (submitted) throw new Error('SchoolPass API error: 503 Service Unavailable');
         return { dailyList: [] };
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505, confirm: true,
-    });
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS);
     expect(raw.isError).toBeFalsy();
     const res = parseToolResult<{
       submitted: boolean; verified: boolean; response: unknown; after?: unknown; readError: string; note: string;
@@ -188,64 +300,74 @@ describe('schoolpass_submit_dismissal_change', () => {
     await h.close();
   });
 
+  it('reports submitted:"unknown" — NOT an error — when the POST itself times out', async () => {
+    // The write may have landed while the connection stalled. An error would
+    // read as "nothing happened" and invite the duplicate-change retry.
+    const { client, submits } = fakeClient({
+      submit: async () => {
+        throw new SchoolPassTimeoutError('https://x/api/studentchange', 30_000, new DOMException('t', 'TimeoutError'));
+      },
+    });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS);
+    expect(raw.isError).toBeFalsy();
+    const res = parseToolResult<{ submitted: string; verified: boolean; error: string; note: string }>(raw);
+    expect(res.submitted).toBe('unknown');
+    expect(res.verified).toBe(false);
+    expect(res.error).toMatch(/timed out|did not answer/i);
+    expect(res.note).toMatch(/do not resubmit/i);
+    expect(submits).toHaveLength(1);
+    await h.close();
+  });
+
+  it('still throws — before any write — when the POST fails with a server error', async () => {
+    // A 400/500 means the write did NOT land; surfacing it is right and a retry is safe.
+    const { client } = fakeClient({ submit: async () => { throw new Error('SchoolPass API error on studentchange: HTTP 400'); } });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS);
+    expect(raw.isError).toBe(true);
+    await h.close();
+  });
+
   it('still fails — before any write — when the pre-submit calendar read throws', async () => {
     const submits: unknown[] = [];
     const client = {
       schoolCode: 1183,
       async getMemberId() { return 15348; },
       async submitStudentChange(body: unknown) { submits.push(body); return { success: true }; },
-      async get() { throw new Error('SchoolPass API error: 503'); },
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
+        throw new Error('SchoolPass API error: 503');
+      },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505, confirm: true,
-    });
+    const res = await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS);
     expect(res.isError).toBe(true);
     expect(submits).toHaveLength(0);
     await h.close();
   });
 
   it('treats a calendar read with no dailyList as an empty day', async () => {
-    // before-read returns undefined (no dailyList), after-read returns a change.
-    let reads = 0;
+    // before-reads return undefined (no dailyList); the after-read shows a change.
+    let submitted = false;
     const client = {
       schoolCode: 1183,
-      async getMemberId() {
-        return 15348;
-      },
-      async submitStudentChange() {
-        return { ok: true };
-      },
-      async get() {
-        reads += 1;
+      async getMemberId() { return 15348; },
+      async submitStudentChange() { submitted = true; return { ok: true }; },
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
         // The after-read must carry the documented proof shape (non-default +
         // populated changeSeriesId, matching the submitted change_type), or the
         // landed check correctly refuses it — this test is about the missing
-        // dailyList on the FIRST read, not about the verification.
-        return reads === 1
-          ? undefined
-          : {
-              dailyList: [
-                {
-                  isDefault: false,
-                  changeId: 7,
-                  changeSeriesId: 77,
-                  studentChangeType: StudentChangeType.Absent,
-                  adType: AdType.Departure,
-                  moveToId: null,
-                },
-              ],
-            };
+        // dailyList on the BEFORE reads, not about the verification.
+        return submitted
+          ? { dailyList: [{ isDefault: false, changeId: 7, changeSeriesId: 77, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }] }
+          : undefined;
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const res = parseToolResult<{ submitted: boolean; before: unknown[] }>(
-      await h.callTool('schoolpass_submit_dismissal_change', {
-        student_id: 1,
-        date: '2026-09-14',
-        change_type: 'absent',
-        confirm: true,
-      }),
+      await confirmed(h, 'schoolpass_submit_dismissal_change', { student_id: 1, date: '2026-09-14', change_type: 'absent' }),
     );
     expect(res.submitted).toBe(true);
     expect(res.before).toEqual([]);
@@ -256,26 +378,10 @@ describe('schoolpass_submit_dismissal_change', () => {
     // The requested change is ALREADY on the day, so nothing moves. A
     // before/after diff would call that a failed write; the documented proof is
     // the presence of a matching non-default entry, which holds.
-    const entry = {
-      isDefault: false,
-      changeId: 9,
-      changeSeriesId: 4242,
-      studentChangeType: StudentChangeType.Carpool,
-      adType: AdType.Departure,
-      moveToId: 505,
-    };
-    const client = {
-      schoolCode: 1183,
-      async getMemberId() { return 15348; },
-      async submitStudentChange() { return { success: true }; },
-      async get() { return { dailyList: [entry] }; },
-    } as unknown as SchoolPassClient;
+    const { client } = fakeClient({ calendar: () => ({ dailyList: [LANDED_CARPOOL] }) });
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const res = parseToolResult<{ submitted: boolean; alreadyInPlace: boolean }>(
-      await h.callTool('schoolpass_submit_dismissal_change', {
-        student_id: 11278, date: '2026-09-14', change_type: 'carpool',
-        move_to_id: 505, confirm: true,
-      }),
+      await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS),
     );
     expect(res.submitted).toBe(true);
     expect(res.alreadyInPlace).toBe(true);
@@ -290,18 +396,17 @@ describe('schoolpass_submit_dismissal_change', () => {
       schoolCode: 1183,
       async getMemberId() { return 15348; },
       async submitStudentChange() { submitted = true; return { success: true }; },
-      async get() {
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
         return {
           dailyList: submitted
             ? [{ isDefault: false, changeId: 1, changeSeriesId: 1, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }]
-            : [{ isDefault: true, changeId: null, changeSeriesId: null, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: 8553 }],
+            : [DEFAULT_CARPOOL],
         };
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505, confirm: true,
-    });
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS);
     expect(raw.isError).toBeFalsy();
     const res = parseToolResult<{ submitted: boolean; verified: boolean }>(raw);
     expect(res.submitted).toBe(true);
@@ -313,7 +418,7 @@ describe('schoolpass_submit_dismissal_change', () => {
     const { client, submits } = fakeClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const res = await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_type: 'carpool', confirm: true,
+      student_id: 11278, date: '2026-09-14', change_type: 'carpool',
     });
     expect(res.isError).toBe(true);
     expect(submits).toHaveLength(0); // refused BEFORE any write
@@ -326,7 +431,7 @@ describe('schoolpass_submit_dismissal_change', () => {
     const { client, submits } = fakeClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const res = await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_type: 'bus', confirm: true,
+      student_id: 11278, date: '2026-09-14', change_type: 'bus',
     });
     expect(res.isError).toBe(true);
     expect(submits).toHaveLength(0);
@@ -341,7 +446,8 @@ describe('schoolpass_submit_dismissal_change', () => {
       schoolCode: 1183,
       async getMemberId() { return 15348; },
       async submitStudentChange() { submitted = true; return { success: true }; },
-      async get() {
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
         return {
           dailyList: submitted
             ? [{ isDefault: false, changeId: 1, changeSeriesId: 1, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: 505 }]
@@ -350,9 +456,7 @@ describe('schoolpass_submit_dismissal_change', () => {
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_type: 'absent', confirm: true,
-    });
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { student_id: 11278, date: '2026-09-14', change_type: 'absent' });
     expect(raw.isError).toBeFalsy();
     const res = parseToolResult<{ verified: boolean; note: string }>(raw);
     expect(res.verified).toBe(false);
@@ -363,9 +467,8 @@ describe('schoolpass_submit_dismissal_change', () => {
   it('passes bus_stop_id through to the request body', async () => {
     const { client, submits } = fakeClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    await h.callTool('schoolpass_submit_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_type: 'bus',
-      move_to_id: 61, bus_stop_id: 909, confirm: true,
+    await confirmed(h, 'schoolpass_submit_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', change_type: 'bus', move_to_id: 61, bus_stop_id: 909,
     });
     expect((submits[0] as { busStopId?: number }).busStopId).toBe(909);
     await h.close();
@@ -384,8 +487,10 @@ describe('schoolpass_submit_dismissal_change', () => {
   });
 });
 
+const ABSENT_CHANGE = { isDefault: false, changeSeriesId: 27074, studentChangeType: 1, adType: 4, description: 'Absent' };
+
 /** Client whose calendar shows a non-default change until it is deleted. */
-function cancelClient(): { client: SchoolPassClient; deletes: unknown[] } {
+function cancelClient(entries?: () => unknown[]): { client: SchoolPassClient; deletes: unknown[] } {
   const deletes: unknown[] = [];
   let deleted = false;
   const client = {
@@ -398,11 +503,13 @@ function cancelClient(): { client: SchoolPassClient; deletes: unknown[] } {
       deleted = true;
       return { ok: true };
     },
-    async get() {
+    async get(path: string) {
+      if (path === ENDPOINTS.parentStudents) return STUDENTS;
+      if (entries) return { dailyList: entries() };
       return {
         dailyList: deleted
           ? [{ isDefault: true, changeSeriesId: null, studentChangeType: 4, adType: 3 }]
-          : [{ isDefault: false, changeSeriesId: 27074, studentChangeType: 1, adType: 4, description: 'Absent' }],
+          : [ABSENT_CHANGE],
       };
     },
   } as unknown as SchoolPassClient;
@@ -410,31 +517,57 @@ function cancelClient(): { client: SchoolPassClient; deletes: unknown[] } {
 }
 
 describe('schoolpass_cancel_dismissal_change', () => {
-  it('previews the change to cancel without deleting', async () => {
+  it('phase 1: previews the change to cancel, naming the child, without deleting', async () => {
     const { client, deletes } = cancelClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ dryRun: boolean; wouldCancel: { changeSeriesId: number } }>(
+    const res = parseToolResult<PhaseOne>(
       await h.callTool('schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14' }),
     );
-    expect(res.dryRun).toBe(true);
-    expect(res.wouldCancel.changeSeriesId).toBe(27074);
+    expect(res.status).toBe('confirmation-required');
+    expect(res.preview.student).toEqual({ id: 11278, name: 'Ava Example' });
+    expect(res.preview.wouldCancel).toMatchObject({ changeSeriesId: 27074, changeType: 'absent', description: 'Absent', date: '2026-09-14' });
+    expect(res.preview.willSend).toMatchObject({ method: 'DELETE', endpoint: ENDPOINTS.deleteStudentChange });
     expect(deletes).toHaveLength(0);
     await h.close();
   });
 
-  it('cancels with confirm:true and confirms the day cleared', async () => {
+  it('a bare confirm:true (the old gate) no longer deletes anything', async () => {
+    const { client, deletes } = cancelClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    await h.callTool('schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14', confirm: true });
+    expect(deletes).toHaveLength(0);
+    await h.close();
+  });
+
+  it('phase 2: the token from the preview cancels and confirms the day cleared', async () => {
     const { client, deletes } = cancelClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const res = parseToolResult<{ cancelled: boolean; cleared: boolean }>(
-      await h.callTool('schoolpass_cancel_dismissal_change', {
-        student_id: 11278,
-        date: '2026-09-14',
-        confirm: true,
-      }),
+      await confirmed(h, 'schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14' }),
     );
     expect(res.cancelled).toBe(true);
     expect(res.cleared).toBe(true);
     expect(deletes[0]).toMatchObject({ changeSeriesId: 27074, changeType: 1, adType: 4, date: '2026-09-14' });
+    await h.close();
+  });
+
+  it('binds the previewed change: a DIFFERENT single change on the day at confirm time is not deleted', async () => {
+    // The audit's scenario: no change_series_id given, so the tool picks "the
+    // one cancellable change". If that one is replaced between preview and
+    // confirm, the token must not carry the approval over to the newcomer.
+    let day: unknown[] = [ABSENT_CHANGE];
+    const { client, deletes } = cancelClient(() => day);
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const phase1 = parseToolResult<PhaseOne>(
+      await h.callTool('schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14' }),
+    );
+    day = [{ isDefault: false, changeSeriesId: 31000, studentChangeType: 3, adType: 3, description: 'Early dismissal' }];
+    const raw = await h.callTool('schoolpass_cancel_dismissal_change', {
+      student_id: 11278, date: '2026-09-14', confirmToken: phase1.confirmToken,
+    });
+    expect(raw.isError).toBe(true);
+    expect(parseToolResult<{ status: string }>(raw).status).toBe('confirmation-rejected');
+    expect(deletes).toHaveLength(0);
     await h.close();
   });
 
@@ -455,20 +588,18 @@ describe('schoolpass_cancel_dismissal_change', () => {
     // Calendar keeps showing the non-default change even after delete.
     const client = {
       schoolCode: 1183,
+      async getMemberId() { return 15348; },
       async deleteStudentChange() {
         return { ok: true };
       },
-      async get() {
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
         return { dailyList: [{ isDefault: false, changeSeriesId: 27074, studentChangeType: 1, adType: 4 }] };
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const res = parseToolResult<{ cancelled: boolean; cleared: boolean }>(
-      await h.callTool('schoolpass_cancel_dismissal_change', {
-        student_id: 1,
-        date: '2026-09-14',
-        confirm: true,
-      }),
+      await confirmed(h, 'schoolpass_cancel_dismissal_change', { student_id: 1, date: '2026-09-14' }),
     );
     expect(res.cancelled).toBe(true);
     expect(res.cleared).toBe(false);
@@ -477,40 +608,33 @@ describe('schoolpass_cancel_dismissal_change', () => {
 });
 
 describe('schoolpass_cancel_dismissal_change targeting', () => {
-  const cancelClient = (entries: unknown[], onDelete?: (a: unknown) => void) =>
-    ({
-      schoolCode: 1183,
-      async getMemberId() { return 15348; },
-      async deleteStudentChange(a: unknown) { onDelete?.(a); return { ok: true }; },
-      async get() { return { dailyList: entries }; },
-    } as unknown as SchoolPassClient);
+  const TWO = [
+    { isDefault: false, changeId: 11, changeSeriesId: 11, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: null },
+    { isDefault: false, changeId: 22, changeSeriesId: 22, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null },
+  ];
 
   it('refuses to guess when the date carries several changes', async () => {
-    const client = cancelClient([{ isDefault: false, changeId: 11, changeSeriesId: 11, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: null }, { isDefault: false, changeId: 22, changeSeriesId: 22, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }]);
+    const { client, deletes } = cancelClient(() => TWO);
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = await h.callTool('schoolpass_cancel_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', confirm: true,
-    });
+    const res = await h.callTool('schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14' });
     expect(res.isError).toBe(true);
+    expect(deletes).toHaveLength(0);
     await h.close();
   });
 
   it('cancels the change_series_id it was given', async () => {
-    let deleted: { changeSeriesId?: number } | undefined;
-    const client = cancelClient([{ isDefault: false, changeId: 11, changeSeriesId: 11, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: null }, { isDefault: false, changeId: 22, changeSeriesId: 22, studentChangeType: StudentChangeType.Absent, adType: AdType.Departure, moveToId: null }], (a) => { deleted = a as typeof deleted; });
+    const { client, deletes } = cancelClient(() => TWO);
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    await h.callTool('schoolpass_cancel_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_series_id: 22, confirm: true,
-    });
-    expect(deleted?.changeSeriesId).toBe(22);
+    await confirmed(h, 'schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14', change_series_id: 22 });
+    expect((deletes[0] as { changeSeriesId?: number }).changeSeriesId).toBe(22);
     await h.close();
   });
 
   it('errors when the given change_series_id is not on that date', async () => {
-    const client = cancelClient([{ isDefault: false, changeId: 11, changeSeriesId: 11, studentChangeType: StudentChangeType.Carpool, adType: AdType.Departure, moveToId: null }]);
+    const { client } = cancelClient(() => [TWO[0]!]);
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const res = await h.callTool('schoolpass_cancel_dismissal_change', {
-      student_id: 11278, date: '2026-09-14', change_series_id: 999, confirm: true,
+      student_id: 11278, date: '2026-09-14', change_series_id: 999,
     });
     expect(res.isError).toBe(true);
     await h.close();
@@ -519,10 +643,10 @@ describe('schoolpass_cancel_dismissal_change targeting', () => {
 
 describe('write-tool annotations', () => {
   it('marks both writes destructive and non-idempotent so clients gate them for a human', async () => {
-    // `confirm` is filled in by the model, not a person — the annotation is the
-    // only signal a client has to put an approval prompt in front of the call.
-    // Cancelling DELETEs a child's real dismissal arrangement, so it must be
-    // gated exactly like submit.
+    // The confirm token is carried by the model, not a person — the annotation
+    // is the other signal a client has to put an approval prompt in front of
+    // the call. Cancelling DELETEs a child's real dismissal arrangement, so it
+    // must be gated exactly like submit.
     const { client } = cancelClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const { tools } = await h.client.listTools();
@@ -532,6 +656,89 @@ describe('write-tool annotations', () => {
       // Absent means false per the MCP spec; it must never claim idempotency.
       expect(tool?.annotations?.idempotentHint, name).not.toBe(true);
     }
+    await h.close();
+  });
+});
+
+describe('schoolpass_submit_dismissal_change — preview wording', () => {
+  /** A fake client whose student list and calendar are scripted per test. */
+  function previewClient(opts: { students?: unknown; calendar?: unknown }): {
+    client: SchoolPassClient;
+    submits: unknown[];
+  } {
+    const submits: unknown[] = [];
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() {
+        return 15348;
+      },
+      async submitStudentChange(body: unknown) {
+        submits.push(body);
+        return { success: true };
+      },
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return opts.students ?? STUDENTS;
+        return opts.calendar ?? { dailyList: [DEFAULT_CARPOOL] };
+      },
+    } as unknown as SchoolPassClient;
+    return { client, submits };
+  }
+
+  it('echoes every optional detail of the change, so the parent approves what will be sent', async () => {
+    const { client, submits } = previewClient({});
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', {
+      student_id: 11278,
+      date: '2026-09-14',
+      change_type: 'early_dismissal',
+      notes: 'Dentist appointment',
+      pickup_dropoff_person: 'Grandparent Example',
+      will_return: true,
+      time_of_day: '13:15',
+    });
+    const res = parseToolResult<PhaseOne>(raw);
+    expect(res.status).toBe('confirmation-required');
+    expect(res.preview.change).toEqual({
+      type: 'early_dismissal',
+      side: 'departure',
+      notes: 'Dentist appointment',
+      pickupDropoffPerson: 'Grandparent Example',
+      willReturn: true,
+      timeOfDay: '13:15',
+    });
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('shows a wire change/side code it has no word for as the raw number, rather than dropping it', async () => {
+    const { client } = previewClient({
+      calendar: {
+        dailyList: [{ ...DEFAULT_CARPOOL, studentChangeType: 99, adType: 42, description: 'Something new' }],
+      },
+    });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = parseToolResult<PhaseOne>(await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS));
+    expect(res.preview.currentDay).toEqual([
+      expect.objectContaining({ change: '99', side: '42', description: 'Something new' }),
+    ]);
+    await h.close();
+  });
+
+  it('falls back to "student <id>" when the parent’s record for the child carries no name', async () => {
+    const { client } = previewClient({ students: [{ id: 11278, firstName: '', lastName: null }] });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const res = parseToolResult<PhaseOne>(await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS));
+    expect(res.preview.student).toEqual({ id: 11278, name: 'student 11278' });
+    await h.close();
+  });
+
+  it('refuses every student — before any write — when the student list is not a list', async () => {
+    const { client, submits } = previewClient({ students: { error: 'unexpected shape' } });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', CARPOOL_ARGS);
+    expect(raw.isError).toBe(true);
+    expect(raw.content[0]).toMatchObject({ type: 'text', text: expect.stringMatching(/not one of this parent/) });
+    expect(submits).toHaveLength(0);
     await h.close();
   });
 });

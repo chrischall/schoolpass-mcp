@@ -17,13 +17,13 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 | `schoolpass_whoami` | The parent identity the server signed in as. |
 | `schoolpass_list_students` | Your linked students — name, grade, home dismissal location, aftercare. |
 | `schoolpass_get_profile` | The parent account profile. |
-| `schoolpass_list_drivers` | Authorized pickup drivers, with their carpools. |
+| `schoolpass_list_drivers` | Authorized pickup drivers; `include_carpool: true` adds their carpools (other families' contact/vehicle fields dropped unless `view: "full"`). |
 | `schoolpass_get_calendar` | A student's arrival/dismissal calendar over a date range. |
 | `schoolpass_list_pickup_changes` | Pickup/dismissal changes for a student on a date. |
 | `schoolpass_list_dismissal_locations` | The school's dismissal locations, with ids. |
 | `schoolpass_get_school_info` | Basic school info and per-school config. |
-| `schoolpass_submit_dismissal_change` | Submit a dismissal/arrival change (confirm-gated, dry-run preview). |
-| `schoolpass_cancel_dismissal_change` | Cancel a change, back to default (confirm-gated). |
+| `schoolpass_submit_dismissal_change` | Submit a dismissal/arrival change (confirm-gated: preview + single-use `confirmToken`). |
+| `schoolpass_cancel_dismissal_change` | Cancel a change, back to default (confirm-gated: preview + `confirmToken`). |
 
 ## Configuration
 
@@ -33,6 +33,9 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 | `SCHOOLPASS_PASSWORD` | yes | Your SchoolPass password. |
 | `SCHOOLPASS_SCHOOL_CODE` | yes | The numeric school id (the `AppCode` / `appCode` value; e.g. `1183`). |
 | `SCHOOLPASS_API_HOST` | no | Regional API host override (default `busapi-east16-ss.school-pass.net`). |
+| `MCP_CONFIRM_MODE` | no | How the two writes confirm on a client that cannot show a prompt: `ask-user` (default — preview + token, the user approves in chat), `auto` (the model may use the token after reviewing the preview), or `refuse`. |
+| `MCP_CONFIRM_TTL_SECONDS` | no | How long a confirm token stays valid (default `600`). |
+| `MCP_CONFIRM_SECRET` | no | HMAC key for confirm tokens; set only if tokens must survive a restart. |
 
 **Finding your school id and region host:** sign into your school's
 `<school>.school-pass.net` portal, open the new SchoolPass app, and read
@@ -61,7 +64,10 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 - **Parent scope only.** A parent token cannot reach admin routes (visitor
   management, carline operations, reports, bus routing); those return `403`.
 - **Never retry a rejected login.** SchoolPass fronts its login with reCAPTCHA;
-  repeated failures can get the account challenged.
+  repeated failures can get the account challenged. A password SchoolPass
+  refuses (400/401) is tried once per process: later calls return the same
+  error without contacting SchoolPass until the configured credentials change
+  or the server restarts.
 - **No credentials, still boots.** The server starts without configuration and
   answers `tools/list`; the config error surfaces on the first tool call.
 

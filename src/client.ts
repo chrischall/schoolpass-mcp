@@ -19,8 +19,14 @@
  */
 
 import { TokenManager } from '@chrischall/mcp-utils/session';
+import { createHash } from 'node:crypto';
 import { buildQueryString } from '@chrischall/mcp-utils';
-import { login, refreshToken as refreshTokens, type SchoolPassIdentity } from './auth.js';
+import {
+  SchoolPassAuthRejectedError,
+  login,
+  refreshToken as refreshTokens,
+  type SchoolPassIdentity,
+} from './auth.js';
 import { resolveConfig, type SchoolPassConfig } from './config.js';
 import {
   ENDPOINTS,
@@ -42,6 +48,17 @@ export type QueryParams = Record<
   string | number | boolean | undefined | (string | number)[]
 >;
 
+/**
+ * A digest of the credentials a login sends — what the rejection latch is keyed
+ * on, so a corrected password (or email / school) gets exactly one fresh try.
+ * Hashed so the latch never holds a second copy of the password.
+ */
+function credentialFingerprint(config: SchoolPassConfig): string {
+  return createHash('sha256')
+    .update(`${config.email}\0${config.password}\0${config.schoolCode}`)
+    .digest('hex');
+}
+
 export interface SchoolPassClientOptions {
   /** Injectable fetch (tests). */
   fetchImpl?: FetchLike;
@@ -60,6 +77,14 @@ export class SchoolPassClient {
    *  `TokenManager` does not hand it to the refresh callback. */
   private currentAccessToken = '';
   private bootstrapInFlight: Promise<void> | undefined;
+  /**
+   * A login SchoolPass refused (400/401), latched for the life of the process
+   * against the credentials that earned it. Every later call rethrows it
+   * instead of sending the same refused password again — within one call the
+   * login was already one-attempt, but without this a model retry, a hosted
+   * healthcheck poller, or any later tool call re-ran the login each time.
+   */
+  private rejection: { error: SchoolPassAuthRejectedError; fingerprint: string } | undefined;
 
   constructor(opts: SchoolPassClientOptions = {}) {
     this.fetchImpl = opts.fetchImpl;
@@ -97,6 +122,7 @@ export class SchoolPassClient {
    * burst of concurrent callers.
    */
   async ensureSession(): Promise<void> {
+    this.checkRejectionLatch();
     if (this.tokens) return;
     if (!this.bootstrapInFlight) {
       const config = this.requireConfig();
@@ -118,8 +144,10 @@ export class SchoolPassClient {
         // with an expired access token threw away a good session for a login.
         const view = tokenView(cache, {
           get: () => this.identity,
+          // The cache does not persist the email (it is already in the
+          // environment), so a restored identity takes the configured one.
           set: (identity) => {
-            this.identity = identity;
+            this.identity = { ...identity, email: identity.email ?? config.email };
           },
         });
         const persistence = view && {
@@ -138,8 +166,19 @@ export class SchoolPassClient {
         // failed every call — and every restart — until session.json was
         // deleted by hand (fleet-audit#14).
         const tokens = new TokenManager({
+          // Also the path a dead refresh token falls back to, so the latch is
+          // checked and set HERE, not only in ensureSession().
           initial: async () => {
-            const fresh = await login(config, this.fetchImpl);
+            if (this.rejection) throw this.rejection.error;
+            let fresh: Awaited<ReturnType<typeof login>>;
+            try {
+              fresh = await login(config, this.fetchImpl);
+            } catch (err) {
+              if (err instanceof SchoolPassAuthRejectedError && err.credentialRejected) {
+                this.rejection = { error: err, fingerprint: credentialFingerprint(config) };
+              }
+              throw err;
+            }
             this.identity = fresh.identity;
             this.currentAccessToken = fresh.tokens.accessToken;
             return fresh.tokens;
@@ -166,6 +205,26 @@ export class SchoolPassClient {
       });
     }
     await this.bootstrapInFlight;
+  }
+
+  /**
+   * Rethrow a latched credential rejection — unless the configured credentials
+   * have changed since, in which case drop the latch (and the stale config and
+   * session) so the corrected credentials get one fresh attempt.
+   */
+  private checkRejectionLatch(): void {
+    if (!this.rejection) return;
+    let current: SchoolPassConfig;
+    try {
+      current = resolveConfig(this.env);
+    } catch {
+      throw this.rejection.error;
+    }
+    if (credentialFingerprint(current) === this.rejection.fingerprint) throw this.rejection.error;
+    this.rejection = undefined;
+    this.config = current;
+    this.tokens = undefined;
+    this.identity = undefined;
   }
 
   /**

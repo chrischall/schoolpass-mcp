@@ -21,10 +21,19 @@
  *    configurable so a school in another region can point at its own shard.
  */
 
-import { McpToolError, truncateErrorMessage } from '@chrischall/mcp-utils';
+import { McpToolError, truncateErrorMessage, withAmbientCancellation } from '@chrischall/mcp-utils';
 
 /** Default regional API host. Overridable via `SCHOOLPASS_API_HOST`. */
 export const DEFAULT_API_HOST = 'busapi-east16-ss.school-pass.net';
+
+/**
+ * How long one upstream request may take before it is abandoned. Without a
+ * deadline a stalled TCP connection to the regional host hung the tool until
+ * the MCP client gave up — and for the non-idempotent `POST studentchange` a
+ * client-side timeout reads as "nothing happened" and invites the retry that
+ * duplicates a child's change (`docs/SCHOOLPASS-API.md`, "Traps").
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * Build the API root for a host. Ends in `/` so endpoint paths concatenate
@@ -153,11 +162,39 @@ export class SchoolPassApiError extends McpToolError {
   }
 }
 
+/**
+ * A request that hit {@link REQUEST_TIMEOUT_MS} (or the caller's own deadline)
+ * before SchoolPass answered. Carries the original `TimeoutError` as `cause`
+ * so `TokenManager` classifies it as an OUTAGE, not a dead credential — a slow
+ * `Auth/token/refresh` must not destroy a still-good refresh token.
+ *
+ * Deliberately says nothing about whether the request landed: for a write the
+ * honest answer is "unknown", and the submit tool reports exactly that rather
+ * than throwing (an error would read as "nothing happened").
+ */
+export class SchoolPassTimeoutError extends McpToolError {
+  readonly timeoutMs: number;
+
+  constructor(url: string, timeoutMs: number, cause: unknown) {
+    const path = url.replace(/^[a-z]+:\/\/[^/]+\/api\//i, '').replace(/\?.*$/, '');
+    super(`SchoolPass did not answer ${path} within ${timeoutMs} ms.`, {
+      hint:
+        'SchoolPass may be slow or unreachable. A read can simply be retried. For a write, re-read the ' +
+        'calendar FIRST — the request may have landed after this gave up on it.',
+      cause,
+    });
+    this.name = 'SchoolPassTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 /** Init accepted by {@link FetchLike} — a small, explicit subset of `RequestInit`. */
 export interface SchoolPassRequestInit {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  /** Fires on the request deadline OR the tool call's cancellation, whichever comes first. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -208,15 +245,60 @@ export interface SchoolPassRawResponse {
  */
 export async function sendRequest(
   url: string,
-  opts: { method: string; headers: Record<string, string>; body?: unknown; fetchImpl?: FetchLike },
+  opts: {
+    method: string;
+    headers: Record<string, string>;
+    body?: unknown;
+    fetchImpl?: FetchLike;
+    /** Override of {@link REQUEST_TIMEOUT_MS} (tests). */
+    timeoutMs?: number;
+  },
 ): Promise<SchoolPassRawResponse> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
-  const response = await fetchImpl(url, {
-    method: opts.method,
-    headers: opts.headers,
-    ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+  const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  // Our deadline, folded together with the tool call's own cancellation
+  // (mcp-utils `currentCallSignal`): a request the caller has given up on is
+  // stopped too, instead of holding the upstream connection for the full
+  // budget. Which one fired is told apart by asking the deadline signal, not
+  // by the error — both ends abort with an AbortError-shaped rejection.
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = withAmbientCancellation(deadline)!;
+  // Raced against the signal as well as passed to fetch, so the deadline holds
+  // even for a fetch implementation that ignores `signal` — the request must
+  // never be able to hang the tool, whatever is behind `fetchImpl`.
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason as unknown);
+    // A call cancelled before this request even started never fires `abort`
+    // again, so the listener alone would wait forever on a fetch that ignores
+    // the signal.
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
   });
-  const text = await response.text();
+  try {
+    const response = await Promise.race([
+      fetchImpl(url, {
+        method: opts.method,
+        headers: opts.headers,
+        signal,
+        ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+      }),
+      aborted,
+    ]);
+    const text = await Promise.race([response.text(), aborted]);
+    return parseRaw(text, response);
+  } catch (err) {
+    if (deadline.aborted) throw new SchoolPassTimeoutError(url, timeoutMs, err);
+    throw err;
+  } finally {
+    // The ambient signal outlives this request (it is the whole tool call's),
+    // so the listener must not: one leaked closure per request otherwise.
+    signal.removeEventListener('abort', onAbort!);
+  }
+}
+
+/** Parse the response text into a {@link SchoolPassRawResponse}. */
+function parseRaw(text: string, response: Response): SchoolPassRawResponse {
   let body: unknown = text;
   let json = false;
   if (text) {
