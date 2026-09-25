@@ -621,4 +621,58 @@ describe('SchoolPassClient — rejected credential latch (fleet-audit#959)', () 
     await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
     expect(s.attempts()).toBe(2);
   });
+
+  it('stays latched — no attempt, no config error — when the credentials are then removed', async () => {
+    const s = rejectingServer(401);
+    const liveEnv: NodeJS.ProcessEnv = { ...env };
+    const client = new SchoolPassClient({ env: liveEnv, fetchImpl: s.fetchImpl });
+    const first = await client.get('parent/profile').catch((e: unknown) => e);
+    // Unset mid-edit is not "changed": the rejection stands until a complete,
+    // different set of credentials is configured.
+    delete liveEnv.SCHOOLPASS_PASSWORD;
+    const second = await client.get('parent/profile').catch((e: unknown) => e);
+    expect(second).toBe(first);
+    expect(s.attempts()).toBe(1);
+  });
+
+  it('latches a rejection met on the dead-refresh-token fallback, and that fallback honours it too', async () => {
+    // Log in fine, then the server revokes everything: the access token gets a
+    // 401, the refresh token is dead, and the password has been changed.
+    let usersStatus = 200;
+    let attempts = 0;
+    let dataStatus = 200;
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes('Auth/users')) {
+        attempts += 1;
+        return usersStatus === 200
+          ? new Response(JSON.stringify([{ userId: 5, userType: 3 }]), { status: 200 })
+          : new Response('invalid credentials', { status: usersStatus });
+      }
+      if (url.includes('Auth/token/refresh')) return new Response('refresh token expired', { status: 400 });
+      if (url.includes('Auth/token')) {
+        return new Response(JSON.stringify({ access_token: jwt(futureExp()), refresh_token: 'r1' }), { status: 200 });
+      }
+      return dataStatus === 200 ? new Response('{"ok":1}', { status: 200 }) : new Response('unauthorized', { status: 401 });
+    };
+    const client = new SchoolPassClient({ env, fetchImpl });
+    await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+    expect(attempts).toBe(1);
+
+    usersStatus = 401;
+    dataStatus = 401;
+    // 401 -> refresh (dead) -> the manager falls back to the login -> rejected.
+    const rejected = await client.get('parent/profile').catch((e: unknown) => e);
+    expect((rejected as Error).message).toMatch(/rejected/);
+    expect(attempts).toBe(2);
+
+    // The next tool call is stopped by the latch in ensureSession().
+    await expect(client.get('parent/profile')).rejects.toBe(rejected);
+    // A caller that had already passed that check when the latch was set goes
+    // straight to the manager, whose login fallback must refuse as well. This
+    // drives it directly: the interleaving that reaches it is a microtask race
+    // no test can schedule reliably.
+    const manager = (client as unknown as { tokens: { getAccessToken(): Promise<string> } }).tokens;
+    await expect(manager.getAccessToken()).rejects.toBe(rejected);
+    expect(attempts).toBe(2);
+  });
 });
