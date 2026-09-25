@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.3...v1.0.4) (2026-09-25)
+
+
+### Bug Fixes
+
+* **deps:** bump dotenv from 18.0.0 to 18.0.2 in the production-dependencies group ([#70](https://github.com/chrischall/schoolpass-mcp/issues/70)) ([62028ab](https://github.com/chrischall/schoolpass-mcp/commit/62028abf49af834d3eeb5b291958fc10ab16c475))
+
 ## [1.0.3](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.2...v1.0.3) (2026-09-23)
 
 
