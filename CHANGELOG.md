@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.5](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.4...v1.0.5) (2026-09-28)
+
+
+### Bug Fixes
+
+* **deps:** bump the production-dependencies group with 3 updates ([#75](https://github.com/chrischall/schoolpass-mcp/issues/75)) ([19178ce](https://github.com/chrischall/schoolpass-mcp/commit/19178ce83ab8117bf18da5d8cdb2b94b09daf9dd))
+
 ## [1.0.4](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.3...v1.0.4) (2026-09-25)
 
 
