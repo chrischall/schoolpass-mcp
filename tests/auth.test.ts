@@ -253,6 +253,15 @@ describe('refreshToken', () => {
     expect((err as Error).name).toBe('SchoolPassRefreshError');
   });
 
+  it('treats a JSON refusal from the token endpoint as a refresh failure, not an edge block', async () => {
+    // A parsed (non-string) body is SchoolPass itself answering, so there is no
+    // block page to read: the status decides, exactly as before #1015.
+    const { fetchImpl } = mockFetch(403, { message: 'refresh token revoked' });
+    const err = await refreshToken(config, 'a', 'b', fetchImpl).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SchoolPassRefreshError);
+    expect((err as { status?: number }).status).toBe(403);
+  });
+
   it('marks a 5xx refresh failure as transient in its hint', async () => {
     const { fetchImpl } = mockFetch(503, 'down');
     const err = await refreshToken(config, 'a', 'b', fetchImpl).catch((e: unknown) => e);
