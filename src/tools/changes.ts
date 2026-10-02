@@ -36,6 +36,7 @@
  */
 
 import {
+  IsoDate,
   McpToolError,
   confirmTokenParam,
   confirmationFromEnv,
@@ -87,7 +88,6 @@ function adTypeName(value: number): string {
   return Object.entries(AD_TYPES).find(([, v]) => v === value)?.[0] ?? String(value);
 }
 
-const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date in YYYY-MM-DD form');
 
 const CONFIRM_NOTE =
   'CONFIRM-GATED: a client that supports MCP elicitation gets a confirmation prompt; otherwise the first ' +
