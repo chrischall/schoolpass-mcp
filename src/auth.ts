@@ -23,7 +23,7 @@
  * endpoints we surface the error and stop — one attempt, no loop.
  */
 
-import { McpToolError, decodeJwtExp } from '@chrischall/mcp-utils';
+import { EdgeBlockedError, McpToolError, decodeJwtExp, detectEdgeBlock } from '@chrischall/mcp-utils';
 import type { BearerTokens, RefreshedTokens } from '@chrischall/mcp-utils/session';
 import type { SchoolPassConfig } from './config.js';
 import {
@@ -308,6 +308,23 @@ export async function refreshToken(
     fetchImpl,
   });
   if (res.status < 200 || res.status >= 300) {
+    // A CDN/WAF refusal page never reached the token endpoint, so nothing
+    // judged the refresh token. EdgeBlockedError is what TokenManager keeps the
+    // session for; a SchoolPassRefreshError(403) would read as "revoked" and
+    // discard a good session for a login on the same blocked host
+    // (chrischall/mcp-host#1015).
+    const edge = detectEdgeBlock({
+      body: typeof res.body === 'string' ? res.body : undefined,
+      headers: res.headers,
+      status: res.status,
+    });
+    if (edge) {
+      throw new EdgeBlockedError(res.status, edge.vendor, {
+        service: 'SchoolPass',
+        method: 'POST',
+        path: ENDPOINTS.authTokenRefresh,
+      });
+    }
     throw new SchoolPassRefreshError(res.status);
   }
   const { accessToken, refreshToken: newRefresh } = extractTokens(res.body);
