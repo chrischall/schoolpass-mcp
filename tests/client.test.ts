@@ -145,6 +145,52 @@ describe('SchoolPassClient.request', () => {
     expect(dataHits).toBe(1);
   });
 
+  it('reports a 401 CDN/WAF refusal page as EdgeBlockedError, not a rejected token (chrischall/mcp-host#1015)', async () => {
+    const { fetchImpl } = scriptedFetch(
+      () =>
+        new Response(CLOUDFRONT_BLOCK, {
+          status: 401,
+          headers: { 'content-type': 'text/html', 'x-cache': 'Error from cloudfront' },
+        }),
+    );
+    const client = new SchoolPassClient({ env, fetchImpl });
+    const err = await client.get('parent/profile').catch((e) => e);
+    expect(err).toBeInstanceOf(EdgeBlockedError);
+    expect(err).toMatchObject({ status: 401, vendor: 'CloudFront' });
+    expect(String(err.hint ?? '')).not.toMatch(/rejected|SCHOOLPASS_SCHOOL_CODE/);
+    expect(err.message).not.toMatch(/rejected/i);
+  });
+
+  it('reports a Cloudflare challenge page on 403 as EdgeBlockedError, not a permissions problem', async () => {
+    const challenge =
+      '<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title></head><body>' +
+      '<div id="challenge-error-text">Enable JavaScript and cookies to continue</div>' +
+      '<script>window._cf_chl_opt={cvId: "3",cType: "managed"};</script></body></html>';
+    const { fetchImpl } = scriptedFetch(
+      () =>
+        new Response(challenge, {
+          status: 403,
+          headers: { 'content-type': 'text/html', 'cf-mitigated': 'challenge', server: 'cloudflare' },
+        }),
+    );
+    const client = new SchoolPassClient({ env, fetchImpl });
+    const err = await client.get('parent/profile').catch((e) => e);
+    expect(err).toBeInstanceOf(EdgeBlockedError);
+    expect(err).toMatchObject({ status: 403, vendor: 'Cloudflare' });
+  });
+
+  it('still reports a genuine 401 rejection with the token-rejected hint', async () => {
+    // Every data hit 401s with a plain origin body: the refresh+replay also
+    // 401s, and the caller must be told the credential was rejected.
+    const { fetchImpl } = scriptedFetch(() => new Response('{"message":"Unauthorized"}', { status: 401 }));
+    const client = new SchoolPassClient({ env, fetchImpl });
+    const err = await client.get('parent/profile').catch((e) => e);
+    expect(err).toBeInstanceOf(SchoolPassApiError);
+    expect(err).not.toBeInstanceOf(EdgeBlockedError);
+    expect(err.status).toBe(401);
+    expect(err.hint).toMatch(/rejected/);
+  });
+
   it('exposes the authenticated identity', async () => {
     const { fetchImpl } = scriptedFetch(() => new Response('[]', { status: 200 }));
     const client = new SchoolPassClient({ env, fetchImpl });
@@ -665,6 +711,40 @@ describe('SchoolPassClient — rejected credential latch (fleet-audit#959)', () 
     s.setStatus(200);
     await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
     expect(s.attempts()).toBe(2);
+  });
+
+  it('does NOT latch a CDN/WAF refusal page on the login, and reports it as EdgeBlockedError (chrischall/mcp-host#1015)', async () => {
+    // The edge refused the login before SchoolPass saw the password, so the
+    // credential was never judged: latching it would refuse every later login
+    // until the (correct) password was "changed".
+    let blocked = true;
+    let attempts = 0;
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes('/version')) return new Response(JSON.stringify('ok'), { status: 200 });
+      if (url.includes('Auth/users')) {
+        attempts += 1;
+        return blocked
+          ? new Response(CLOUDFRONT_BLOCK, {
+              status: 401,
+              headers: { 'content-type': 'text/html', 'x-cache': 'Error from cloudfront' },
+            })
+          : new Response(JSON.stringify([{ userId: 5, userType: 3 }]), { status: 200 });
+      }
+      if (url.includes('Auth/token')) {
+        return new Response(JSON.stringify({ access_token: jwt(futureExp()), refresh_token: 'r1' }), { status: 200 });
+      }
+      return new Response('{"ok":1}', { status: 200 });
+    };
+    const client = new SchoolPassClient({ env, fetchImpl });
+    const err = await client.get('parent/profile').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(EdgeBlockedError);
+    expect((err as Error).message).not.toMatch(/rejected/i);
+    const h = await client.healthcheck();
+    expect(h.authenticated).toBe(false);
+    expect(h.error).not.toMatch(/rejected/i);
+    blocked = false;
+    await expect(client.get('parent/profile')).resolves.toEqual({ ok: 1 });
+    expect(attempts).toBe(3);
   });
 
   it('clears when the configured credentials change', async () => {

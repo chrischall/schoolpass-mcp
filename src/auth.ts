@@ -92,8 +92,19 @@ export class SchoolPassAuthRejectedError extends McpToolError {
   }
 }
 
-/** Throw a rejection that must NOT be retried in a loop (see module doc). */
-function authRejected(status: number, path: string, body: unknown): never {
+/**
+ * Throw a rejection that must NOT be retried in a loop (see module doc) — or,
+ * when the non-2xx is a CDN/WAF refusal page, an {@link EdgeBlockedError}: the
+ * edge answered before SchoolPass saw the password, so nothing judged it and
+ * it must not be latched as rejected (chrischall/mcp-host#1015).
+ */
+function authRejected(status: number, path: string, body: unknown, headers?: Headers): never {
+  const edge = detectEdgeBlock({
+    body: typeof body === 'string' ? body : undefined,
+    headers,
+    status,
+  });
+  if (edge) throw new EdgeBlockedError(status, edge.vendor, { service: 'SchoolPass', method: 'POST', path });
   const detail =
     typeof body === 'string'
       ? body
@@ -166,7 +177,7 @@ export async function fetchIdentities(
     },
     fetchImpl,
   });
-  if (res.status < 200 || res.status >= 300) authRejected(res.status, ENDPOINTS.authUsers, res.body);
+  if (res.status < 200 || res.status >= 300) authRejected(res.status, ENDPOINTS.authUsers, res.body, res.headers);
   return extractIdentityArray(res.body)
     .map(normalizeIdentity)
     .filter((x): x is SchoolPassIdentity => x !== undefined);
@@ -244,7 +255,7 @@ export async function requestToken(
     },
     fetchImpl,
   });
-  if (res.status < 200 || res.status >= 300) authRejected(res.status, ENDPOINTS.authToken, res.body);
+  if (res.status < 200 || res.status >= 300) authRejected(res.status, ENDPOINTS.authToken, res.body, res.headers);
   const { accessToken, refreshToken } = extractTokens(res.body);
   return { accessToken, refreshToken, expiresAt: tokenExpiryMs(accessToken) };
 }

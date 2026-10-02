@@ -67,7 +67,9 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
   repeated failures can get the account challenged. A password SchoolPass
   refuses (400/401) is tried once per process: later calls return the same
   error without contacting SchoolPass until the configured credentials change
-  or the server restarts.
+  or the server restarts. A CDN/WAF block page (CloudFront, Cloudflare, …) is
+  not a refusal: it is reported as an edge block, never latched, and never
+  spends or discards the stored session.
 - **No credentials, still boots.** The server starts without configuration and
   answers `tools/list`; the config error surfaces on the first tool call.
 
