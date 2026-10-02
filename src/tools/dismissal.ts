@@ -9,33 +9,12 @@
  * re-reads the day afterwards rather than trusting the submit's own success.
  */
 
-import { toolAnnotations } from '@chrischall/mcp-utils';
+import { IsoDate, shiftIsoDate, todayIso, toolAnnotations } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { ENDPOINTS } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
-
-/** `YYYY-MM-DD` today, in the server's local zone. */
-function today(): string {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-/** `YYYY-MM-DD` N days from today. */
-function daysFromToday(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-const IsoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date in YYYY-MM-DD form');
 
 export function registerDismissalTools(server: McpServer, client: SchoolPassClient): void {
   server.registerTool(
@@ -61,8 +40,8 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
       const data = await client.get(ENDPOINTS.studentCalendar, {
         schoolCode: client.schoolCode,
         studentId: student_id,
-        startDate: start_date ?? today(),
-        endDate: end_date ?? daysFromToday(14),
+        startDate: start_date ?? todayIso(),
+        endDate: end_date ?? shiftIsoDate(todayIso(), 14),
       });
       return viewResponse(view, data);
     },
@@ -89,7 +68,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
     async ({ student_id, date, view }) => {
       const data = await client.get(ENDPOINTS.pickupChanges, {
         studentId: student_id,
-        date: date ?? today(),
+        date: date ?? todayIso(),
       });
       return viewResponse(view, data);
     },

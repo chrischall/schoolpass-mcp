@@ -179,6 +179,28 @@ describe('dismissal tools', () => {
     await h.close();
   });
 
+  it('get_calendar defaults to TODAY (local) through 14 days out', async () => {
+    const { client, gets } = fakeClient();
+    const h = await createTestHarness((s) => registerDismissalTools(s, client));
+    await h.callTool('schoolpass_get_calendar', { student_id: 42 });
+    const now = new Date();
+    const local = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const end = new Date(now);
+    end.setDate(end.getDate() + 14);
+    expect(gets[0]!.query).toMatchObject({ startDate: local(now), endDate: local(end) });
+    await h.close();
+  });
+
+  it('get_calendar rejects an impossible date before calling the API (fleet-audit#690)', async () => {
+    const { client, gets } = fakeClient();
+    const h = await createTestHarness((s) => registerDismissalTools(s, client));
+    const res = await h.callTool('schoolpass_get_calendar', { student_id: 42, start_date: '2026-02-30' });
+    expect(res.isError).toBe(true);
+    expect(gets).toHaveLength(0);
+    await h.close();
+  });
+
   it('get_calendar rejects a non-positive student id', async () => {
     const { client } = fakeClient();
     const h = await createTestHarness((s) => registerDismissalTools(s, client));

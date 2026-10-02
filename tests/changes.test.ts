@@ -228,6 +228,20 @@ describe('schoolpass_submit_dismissal_change — confirm gate', () => {
     await h.close();
   });
 
+  it('refuses an impossible date before any read or write (fleet-audit#690)', async () => {
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    for (const name of ['schoolpass_submit_dismissal_change', 'schoolpass_cancel_dismissal_change']) {
+      const args = name === 'schoolpass_submit_dismissal_change'
+        ? { ...CARPOOL_ARGS, date: '2026-02-30' }
+        : { student_id: 11278, date: '2026-02-30', change_series_id: 4242 };
+      const raw = await h.callTool(name, args);
+      expect(raw.isError, name).toBe(true);
+    }
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
   it('refuses a student_id that is not one of this parent’s students, before any write', async () => {
     const { client, submits } = fakeClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
