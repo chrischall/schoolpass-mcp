@@ -122,6 +122,29 @@ describe('SchoolPassClient.request', () => {
     expect(dataHits).toBe(2);
   });
 
+  it('does not spend a refresh on a 401 that is a CDN/WAF refusal page (chrischall/mcp-host#1015)', async () => {
+    // An edge answering 401 never showed SchoolPass the token, so nothing
+    // judged it: refreshing would burn the refresh token and the replay meets
+    // the same edge. TokenManager.withAuth can only tell if it sees the body.
+    let dataHits = 0;
+    let refreshes = 0;
+    const { fetchImpl: base } = scriptedFetch(() => {
+      dataHits += 1;
+      return new Response(CLOUDFRONT_BLOCK, {
+        status: 401,
+        headers: { 'content-type': 'text/html', 'x-cache': 'Error from cloudfront' },
+      });
+    });
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (url.includes('Auth/token/refresh')) refreshes += 1;
+      return base(url, init);
+    };
+    const client = new SchoolPassClient({ env, fetchImpl });
+    await expect(client.get('parent/profile')).rejects.toMatchObject({ status: 401 });
+    expect(refreshes).toBe(0);
+    expect(dataHits).toBe(1);
+  });
+
   it('exposes the authenticated identity', async () => {
     const { fetchImpl } = scriptedFetch(() => new Response('[]', { status: 200 }));
     const client = new SchoolPassClient({ env, fetchImpl });
