@@ -20,7 +20,7 @@
 
 import { TokenManager } from '@chrischall/mcp-utils/session';
 import { createHash } from 'node:crypto';
-import { buildQueryString } from '@chrischall/mcp-utils';
+import { EdgeBlockedError, buildQueryString, detectEdgeBlock } from '@chrischall/mcp-utils';
 import {
   SchoolPassAuthRejectedError,
   login,
@@ -272,6 +272,20 @@ export class SchoolPassClient {
     });
 
     if (res.status < 200 || res.status >= 300) {
+      // A CDN/WAF refusal page never reached SchoolPass, so nothing judged the
+      // token or AppCode: report the block, not "token rejected" / "not
+      // authorized" (chrischall/mcp-host#1015). A JSON body is the origin's.
+      const edge = res.json
+        ? null
+        : detectEdgeBlock({
+            // A non-JSON body is always the raw response text (parseRaw).
+            body: res.body as string,
+            headers: res.headers,
+            status: res.status,
+          });
+      if (edge) {
+        throw new EdgeBlockedError(res.status, edge.vendor, { service: 'SchoolPass', method, path });
+      }
       throw new SchoolPassApiError(
         res.status,
         path,
