@@ -35,7 +35,7 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 | `SCHOOLPASS_API_HOST` | no | Regional API host override (default `busapi-east16-ss.school-pass.net`). |
 | `MCP_CONFIRM_MODE` | no | How the two writes confirm on a client that cannot show a prompt: `ask-user` (default — preview + token, the user approves in chat), `auto` (the model may use the token after reviewing the preview), or `refuse`. |
 | `MCP_CONFIRM_TTL_SECONDS` | no | How long a confirm token stays valid (default `600`). |
-| `MCP_CONFIRM_SECRET` | no | HMAC key for confirm tokens; set only if tokens must survive a restart. |
+| `MCP_CONFIRM_SECRET` | no | HMAC key for confirm tokens; set only if tokens must survive a restart. On mcp-host the host supplies a stable per-child key (`MCP_HOST_CONFIRM_SECRET`) and spent tokens are recorded under `MCP_DATA_DIR`, so an approval survives an idle restart. |
 
 **Finding your school id and region host:** sign into your school's
 `<school>.school-pass.net` portal, open the new SchoolPass app, and read
