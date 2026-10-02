@@ -257,12 +257,18 @@ export class SchoolPassClient {
     // A refresh the server rejects as revoked makes the manager clear the cache
     // and re-run the login bootstrap itself; a transient refresh failure (5xx,
     // network) surfaces instead, keeping the still-good refresh token. The
-    // manager only reads `status`, so the parsed response rides alongside.
+    // manager reads `status` — plus, on a 401, a text body and the headers, to
+    // tell a CDN/WAF refusal page (no refresh: nothing judged the token,
+    // chrischall/mcp-host#1015) from a real rejection — so the parsed response
+    // rides alongside.
     let res!: Awaited<ReturnType<typeof send>>;
     await this.tokens!.withAuth(async (token) => {
       this.currentAccessToken = token;
       res = await send(token);
-      return new Response(null, { status: res.status });
+      return new Response(res.status >= 400 && !res.json ? (res.body as string) : null, {
+        status: res.status,
+        headers: res.headers,
+      });
     });
 
     if (res.status < 200 || res.status >= 300) {
