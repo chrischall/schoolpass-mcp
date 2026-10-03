@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.6](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.5...v1.0.6) (2026-10-03)
+
+
+### Bug Fixes
+
+* **client:** report a CDN/WAF block page as an edge block, not a rejected token or login ([#82](https://github.com/chrischall/schoolpass-mcp/issues/82)) ([caf9730](https://github.com/chrischall/schoolpass-mcp/commit/caf97301cd8b5229b703f8a7364d296b32efd871))
+* **deps:** adopt @chrischall/mcp-utils 2.12.0 IsoDate and date helpers ([#81](https://github.com/chrischall/schoolpass-mcp/issues/81)) ([9ef328b](https://github.com/chrischall/schoolpass-mcp/commit/9ef328b0d6ffe6ed993ea7c3276ede93e0953b4e))
+* **deps:** bump @chrischall/mcp-utils to 2.13.0 ([#83](https://github.com/chrischall/schoolpass-mcp/issues/83)) ([5cff962](https://github.com/chrischall/schoolpass-mcp/commit/5cff9629599b9d509fc88cd465427c748791c1d5))
+* keep credentials and report edge_blocked on CDN/WAF blocks (mcp-utils 2.10.0) ([#79](https://github.com/chrischall/schoolpass-mcp/issues/79)) ([98c53e4](https://github.com/chrischall/schoolpass-mcp/commit/98c53e431b06dfb50863986062423ef23442bd68))
+* keep write approvals valid across a hosted restart (mcp-utils 2.11.0) ([#80](https://github.com/chrischall/schoolpass-mcp/issues/80)) ([b02ee11](https://github.com/chrischall/schoolpass-mcp/commit/b02ee11cdbd197df6cbd60fb1832b5b9f3dd1ef4))
+* report CDN/WAF blocks as edge_blocked, not a rejected credential (mcp-utils 2.9.0) ([#77](https://github.com/chrischall/schoolpass-mcp/issues/77)) ([3011d66](https://github.com/chrischall/schoolpass-mcp/commit/3011d66af5a85e28e3c1a7961ded2b5136c39271))
+
 ## [1.0.5](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.4...v1.0.5) (2026-09-28)
 
 
