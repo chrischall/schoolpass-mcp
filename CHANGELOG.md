@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.7](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.6...v1.0.7) (2026-10-05)
+
+
+### Bug Fixes
+
+* **deps:** require @chrischall/mcp-utils 2.14.0 and MCP SDK 2.3.0 ([#84](https://github.com/chrischall/schoolpass-mcp/issues/84)) ([0ceb61c](https://github.com/chrischall/schoolpass-mcp/commit/0ceb61c862e108a46b88d33ee490abcea3fbf5ff))
+
 ## [1.0.6](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.5...v1.0.6) (2026-10-03)
 
 
