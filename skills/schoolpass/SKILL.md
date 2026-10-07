@@ -123,7 +123,8 @@ and the suite stayed green.
   single-use, expires, and is bound to the arguments and to the day as it was
   read: if the day changed in between, the call is refused with a fresh
   preview. `MCP_CONFIRM_MODE` (`ask-user` default / `auto` / `refuse`) governs
-  the fallback.
+  the fallback; `MCP_CONFIRM_ELICITATION=off` forces it even on a client with
+  elicitation.
   `change_type` is one of absent / late_arrival / early_dismissal / carpool /
   activity / bus / virtual; `move_to_id` is a dismissal-location id
   (schoolpass_list_dismissal_locations) or a carpool id (from the calendar).
