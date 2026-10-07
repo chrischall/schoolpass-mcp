@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.8](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.7...v1.0.8) (2026-10-07)
+
+
+### Bug Fixes
+
+* **deps:** bump dotenv from 18.0.4 to 18.0.5 in the production-dependencies group ([#88](https://github.com/chrischall/schoolpass-mcp/issues/88)) ([249ea2b](https://github.com/chrischall/schoolpass-mcp/commit/249ea2bf8fa3bff55f16885632b1d01471f74322))
+* **deps:** let confirmed writes proceed on clients that never show the confirmation prompt ([#91](https://github.com/chrischall/schoolpass-mcp/issues/91)) ([c573dd0](https://github.com/chrischall/schoolpass-mcp/commit/c573dd09b56fd4cac5bf4dd5d8b2753b2026c3b4))
+
+
+### Documentation
+
+* document MCP_CONFIRM_ELICITATION ([#93](https://github.com/chrischall/schoolpass-mcp/issues/93)) ([fb8802d](https://github.com/chrischall/schoolpass-mcp/commit/fb8802deb67c9d27b0bb0e03566dbfd4e20da81e))
+* note MCP_CONFIRM_ELICITATION=off in the dismissal tool's skill entry ([#95](https://github.com/chrischall/schoolpass-mcp/issues/95)) ([b8afd59](https://github.com/chrischall/schoolpass-mcp/commit/b8afd59423adac0d6088c7256fc217c4e57872ae))
+
 ## [1.0.7](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.6...v1.0.7) (2026-10-05)
 
 
