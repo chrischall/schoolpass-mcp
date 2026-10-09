@@ -9,7 +9,7 @@
  * re-reads the day afterwards rather than trusting the submit's own success.
  */
 
-import { IsoDate, shiftIsoDate, toolAnnotations } from '@chrischall/mcp-utils';
+import { IsoDate, UNTRUSTED_DESCRIPTION_SUFFIX, shiftIsoDate, toolAnnotations } from '@chrischall/mcp-utils';
 import { schoolToday } from '../dates.js';
 import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -23,7 +23,8 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
     {
       description:
         'Get a student’s arrival & dismissal calendar over a date range — the per-day default and any ' +
-        'changes. Requires a student id (from schoolpass_list_students). Defaults to today through 14 days out.',
+        'changes. Requires a student id (from schoolpass_list_students). Defaults to today through 14 days out. ' +
+        UNTRUSTED_DESCRIPTION_SUFFIX,
       annotations: toolAnnotations({
         title: 'Student calendar',
         readOnly: true,
@@ -44,7 +45,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         startDate: start_date ?? schoolToday(),
         endDate: end_date ?? shiftIsoDate(schoolToday(), 14),
       });
-      return viewResponse(view, data);
+      return viewResponse(view, data, { untrusted: true });
     },
   );
 
@@ -53,7 +54,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
     {
       description:
         'List pickup / dismissal changes for a student on a given date (defaults to today) — early ' +
-        'pickups, late arrivals, carpool moves, and the like. Requires a student id.',
+        `pickups, late arrivals, carpool moves, and the like. Requires a student id. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({
         title: 'List pickup changes',
         readOnly: true,
@@ -71,7 +72,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         studentId: student_id,
         date: date ?? schoolToday(),
       });
-      return viewResponse(view, data);
+      return viewResponse(view, data, { untrusted: true });
     },
   );
 
@@ -80,7 +81,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
     {
       description:
         'List the school’s dismissal locations (car line, bus, aftercare, walkers, etc.) with their ids — ' +
-        'the vocabulary a dismissal change refers to.',
+        `the vocabulary a dismissal change refers to. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({
         title: 'List dismissal locations',
         readOnly: true,
@@ -91,7 +92,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
         view: viewArg(),
       }),
     },
-    async ({ view }) => viewResponse(view, await client.get(ENDPOINTS.dismissalLocations)),
+    async ({ view }) => viewResponse(view, await client.get(ENDPOINTS.dismissalLocations), { untrusted: true }),
   );
 
   server.registerTool(
@@ -99,7 +100,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
     {
       description:
         'Get basic school info and per-school configuration (features enabled, dismissal windows, etc.) ' +
-        'for the configured school.',
+        `for the configured school. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({
         title: 'School info',
         readOnly: true,
@@ -119,7 +120,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
       // offers `compact`/`full` and no `raw` rung — same as every other read
       // here. Media stripping is subtractive, so it applies to an assembled
       // record exactly as safely as to a passthrough one.
-      return viewResponse(view, { schoolInfo: info, config });
+      return viewResponse(view, { schoolInfo: info, config }, { untrusted: true });
     },
   );
 }
