@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import { createTestHarness, parseToolResult, type TestHarness } from '@chrischall/mcp-utils/test';
+import { parseFenced } from './_fence.js';
 import type { SchoolPassClient } from '../src/client.js';
 import { AdType, ENDPOINTS, SchoolPassTimeoutError, StudentChangeType } from '../src/protocol.js';
 import { registerChangeTools, buildChangeBody, dayOfWeekId } from '../src/tools/changes.js';
@@ -167,7 +168,7 @@ describe('schoolpass_submit_dismissal_change — confirm gate', () => {
   it('phase 2: the token from the preview submits and proves the change landed', async () => {
     const { client, submits } = fakeClient({ afterChanges: true });
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ submitted: boolean; verified: boolean; before: unknown[]; after: unknown[] }>(
+    const res = parseFenced<{ submitted: boolean; verified: boolean; before: unknown[]; after: unknown[] }>(
       await confirmed(h, 'schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, ad_type: 'departure' }),
     );
     expect(res.submitted).toBe(true);
@@ -273,7 +274,7 @@ describe('schoolpass_submit_dismissal_change — after the gate', () => {
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, move_to_id: 8553 });
     expect(raw.isError).toBeFalsy();
-    const res = parseToolResult<{ submitted: boolean; verified: boolean; after: unknown[]; note: string }>(raw);
+    const res = parseFenced<{ submitted: boolean; verified: boolean; after: unknown[]; note: string }>(raw);
     expect(res.submitted).toBe(true);
     expect(res.verified).toBe(false);
     expect(res.after).toHaveLength(1);
@@ -301,7 +302,7 @@ describe('schoolpass_submit_dismissal_change — after the gate', () => {
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS);
     expect(raw.isError).toBeFalsy();
-    const res = parseToolResult<{
+    const res = parseFenced<{
       submitted: boolean; verified: boolean; response: unknown; after?: unknown; readError: string; note: string;
     }>(raw);
     expect(res.submitted).toBe(true);
@@ -325,7 +326,7 @@ describe('schoolpass_submit_dismissal_change — after the gate', () => {
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS);
     expect(raw.isError).toBeFalsy();
-    const res = parseToolResult<{ submitted: string; verified: boolean; error: string; note: string }>(raw);
+    const res = parseFenced<{ submitted: string; verified: boolean; error: string; note: string }>(raw);
     expect(res.submitted).toBe('unknown');
     expect(res.verified).toBe(false);
     expect(res.error).toMatch(/timed out|did not answer/i);
@@ -380,7 +381,7 @@ describe('schoolpass_submit_dismissal_change — after the gate', () => {
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ submitted: boolean; before: unknown[] }>(
+    const res = parseFenced<{ submitted: boolean; before: unknown[] }>(
       await confirmed(h, 'schoolpass_submit_dismissal_change', { student_id: 1, date: '2026-09-14', change_type: 'absent' }),
     );
     expect(res.submitted).toBe(true);
@@ -394,7 +395,7 @@ describe('schoolpass_submit_dismissal_change — after the gate', () => {
     // the presence of a matching non-default entry, which holds.
     const { client } = fakeClient({ calendar: () => ({ dailyList: [LANDED_CARPOOL] }) });
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ submitted: boolean; alreadyInPlace: boolean }>(
+    const res = parseFenced<{ submitted: boolean; alreadyInPlace: boolean }>(
       await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS),
     );
     expect(res.submitted).toBe(true);
@@ -422,7 +423,7 @@ describe('schoolpass_submit_dismissal_change — after the gate', () => {
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', CARPOOL_ARGS);
     expect(raw.isError).toBeFalsy();
-    const res = parseToolResult<{ submitted: boolean; verified: boolean }>(raw);
+    const res = parseFenced<{ submitted: boolean; verified: boolean }>(raw);
     expect(res.submitted).toBe(true);
     expect(res.verified).toBe(false);
     await h.close();
@@ -472,7 +473,7 @@ describe('schoolpass_submit_dismissal_change — after the gate', () => {
     const h = await createTestHarness((s) => registerChangeTools(s, client));
     const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { student_id: 11278, date: '2026-09-14', change_type: 'absent' });
     expect(raw.isError).toBeFalsy();
-    const res = parseToolResult<{ verified: boolean; note: string }>(raw);
+    const res = parseFenced<{ verified: boolean; note: string }>(raw);
     expect(res.verified).toBe(false);
     expect(res.note).not.toMatch(/move_to_id/);
     await h.close();
@@ -556,7 +557,7 @@ describe('schoolpass_cancel_dismissal_change', () => {
   it('phase 2: the token from the preview cancels and confirms the day cleared', async () => {
     const { client, deletes } = cancelClient();
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ cancelled: boolean; cleared: boolean }>(
+    const res = parseFenced<{ cancelled: boolean; cleared: boolean }>(
       await confirmed(h, 'schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14' }),
     );
     expect(res.cancelled).toBe(true);
@@ -612,7 +613,7 @@ describe('schoolpass_cancel_dismissal_change', () => {
       },
     } as unknown as SchoolPassClient;
     const h = await createTestHarness((s) => registerChangeTools(s, client));
-    const res = parseToolResult<{ cancelled: boolean; cleared: boolean }>(
+    const res = parseFenced<{ cancelled: boolean; cleared: boolean }>(
       await confirmed(h, 'schoolpass_cancel_dismissal_change', { student_id: 1, date: '2026-09-14' }),
     );
     expect(res.cancelled).toBe(true);

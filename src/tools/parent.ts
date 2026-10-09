@@ -8,7 +8,7 @@
  * are pinned by the live check (`scripts/live-check.mjs`).
  */
 
-import { toolAnnotations } from '@chrischall/mcp-utils';
+import { UNTRUSTED_DESCRIPTION_SUFFIX, toolAnnotations } from '@chrischall/mcp-utils';
 import { stripCarpoolContacts, viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
@@ -21,7 +21,7 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
     {
       description:
         "List the students linked to the parent account: name, grade, home dismissal location, " +
-        'aftercare flag, and per-student details. Defaults to the signed-in parent.',
+        `aftercare flag, and per-student details. Defaults to the signed-in parent. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({
         title: 'List students',
         readOnly: true,
@@ -35,7 +35,7 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
     async ({ view }) => {
       const memberId = await client.getMemberId();
       const data = await client.get(ENDPOINTS.parentStudents, { memberId });
-      return viewResponse(view, data);
+      return viewResponse(view, data, { untrusted: true });
     },
   );
 
@@ -67,7 +67,7 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
       description:
         'List the authorized pickup drivers registered on the parent account. Pass include_carpool: true ' +
         'to also get the carpools each belongs to — those records describe OTHER families, so on the ' +
-        'default compact view their contact and vehicle fields are dropped (view "full" keeps them).',
+        `default compact view their contact and vehicle fields are dropped (view "full" keeps them). ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({
         title: 'List drivers',
         readOnly: true,
@@ -88,7 +88,7 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         memberId,
         includeCarpool: include_carpool,
       });
-      return viewResponse(view, data, { compact: (d) => stripCarpoolContacts(d) });
+      return viewResponse(view, data, { compact: (d) => stripCarpoolContacts(d), untrusted: true });
     },
   );
 }

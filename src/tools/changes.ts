@@ -38,10 +38,10 @@
 import {
   IsoDate,
   McpToolError,
+  UNTRUSTED_DESCRIPTION_SUFFIX,
   confirmTokenParam,
   confirmationFromEnv,
   hashConfirmPayload,
-  minifiedResult,
   requireConfirmationWithFallback,
   toolAnnotations,
 } from '@chrischall/mcp-utils';
@@ -49,6 +49,7 @@ import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { AdType, ENDPOINTS, SchoolPassTimeoutError, StudentChangeType } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
+import { spsUntrustedResult } from '../view.js';
 
 /**
  * Day-of-week id the API expects in `dateSet.daysOfWeek`, matching the app's
@@ -233,7 +234,8 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         '(verified:true); if the re-read fails or does not show it yet the result is verified:false — the ' +
         'change WAS submitted, so do not resubmit; re-read the calendar instead. ' +
         'Get student_id from schoolpass_list_students and move_to_id from schoolpass_list_dismissal_locations ' +
-        '(a dismissal location id) or the student calendar (a carpool moveToId).',
+        '(a dismissal location id) or the student calendar (a carpool moveToId). The result\'s before/after ' +
+        `calendar snapshots carry the day's notes and descriptions. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({ title: 'Submit dismissal change', readOnly: false, openWorld: true, destructive: true }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
@@ -366,7 +368,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         // answer — unknown — is reported as a result, not an error. A real
         // rejection (400/500) means the write did NOT land and surfaces as usual.
         if (!outcomeUnknown(err)) throw err;
-        return minifiedResult({
+        return spsUntrustedResult({
           submitted: 'unknown',
           verified: false,
           before,
@@ -386,7 +388,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       try {
         after = await readDay(args.student_id, args.date);
       } catch (err) {
-        return minifiedResult({
+        return spsUntrustedResult({
           submitted: true,
           verified: false,
           response,
@@ -410,7 +412,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         (args.move_to_id == null || e.moveToId === args.move_to_id);
       const alreadyInPlace = JSON.stringify(before) === JSON.stringify(after);
       if (!after.some(requested)) {
-        return minifiedResult({
+        return spsUntrustedResult({
           submitted: true,
           verified: false,
           alreadyInPlace,
@@ -425,7 +427,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
             `The change WAS submitted. ${doNotResubmit}`,
         });
       }
-      return minifiedResult({ submitted: true, verified: true, alreadyInPlace, response, before, after });
+      return spsUntrustedResult({ submitted: true, verified: true, alreadyInPlace, response, before, after });
     },
   );
 
@@ -436,7 +438,8 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'Cancel a previously-submitted dismissal/arrival change for a student on a date, returning that ' +
         'date to its default. ' +
         CONFIRM_NOTE +
-        ' Once confirmed it deletes the change and re-reads the calendar to confirm the day is back to default.',
+        ' Once confirmed it deletes the change and re-reads the calendar to confirm the day is back to default. ' +
+        `The result's before/after calendar snapshots carry the day's notes and descriptions. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: true, idempotent: false }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
@@ -554,7 +557,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       // Scoped to the change we deleted: another change on the same day is
       // not evidence this one survived.
       const cleared = !after.some((e) => e.changeSeriesId === change.changeSeriesId);
-      return minifiedResult({ cancelled: true, cleared, response, before, after });
+      return spsUntrustedResult({ cancelled: true, cleared, response, before, after });
     },
   );
 }

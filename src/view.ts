@@ -1,4 +1,29 @@
-import { minifiedResult, resolveView, stripMediaUrls, viewParam, type View } from '@chrischall/mcp-utils';
+import {
+  UNTRUSTED_CONTENT_RULE,
+  minifiedResult,
+  resolveView,
+  stripMediaUrls,
+  untrustedResult,
+  viewParam,
+  type View,
+} from '@chrischall/mcp-utils';
+
+/**
+ * The note heading every untrusted-content envelope this server returns
+ * (chrischall/fleet-audit#894). SchoolPass records carry free text that other
+ * people write — change notes, pickup/drop-off names, descriptions, carpool
+ * and dismissal-location names, school configuration text — and this server
+ * also holds two destructive write tools, so that text is fenced as data.
+ */
+export const SPS_UNTRUSTED_NOTE =
+  'Change notes, pickup/drop-off names, descriptions, carpool and location names and school configuration ' +
+  'text below can be written by school staff or another parent or guardian, not the user. ' +
+  UNTRUSTED_CONTENT_RULE;
+
+/** {@link untrustedResult} with this server's note. */
+export function spsUntrustedResult(payload: unknown): ReturnType<typeof untrustedResult> {
+  return untrustedResult(payload, { note: SPS_UNTRUSTED_NOTE });
+}
 
 /**
  * The rungs this server honours (`@chrischall/mcp-utils`' `view` vocabulary;
@@ -64,14 +89,16 @@ export function stripCarpoolContacts(data: unknown, inCarpool = false): unknown 
  *
  * Only ever called from a READ tool. A write's response is a receipt — an id,
  * a status — with nothing to strip and everything to keep.
+ *
+ * `untrusted: true` fences the result in the untrusted-content envelope — set
+ * it on every read whose payload can carry third-party free text.
  */
 export function viewResponse(
   view: string | undefined,
   data: unknown,
-  opts: { compact?: (data: unknown) => unknown } = {},
+  opts: { compact?: (data: unknown) => unknown; untrusted?: boolean } = {},
 ): ReturnType<typeof minifiedResult> {
   const rung: View = resolveView(view, SPS_VIEWS);
-  if (rung !== 'compact') return minifiedResult(data);
-  const stripped = stripMediaUrls(data);
-  return minifiedResult(opts.compact ? opts.compact(stripped) : stripped);
+  const out = rung === 'compact' ? (opts.compact ?? ((d: unknown) => d))(stripMediaUrls(data)) : data;
+  return opts.untrusted ? spsUntrustedResult(out) : minifiedResult(out);
 }

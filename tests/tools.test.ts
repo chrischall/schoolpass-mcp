@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
+import { parseFenced } from './_fence.js';
 import type { SchoolPassClient } from '../src/client.js';
 import { registerSessionTools } from '../src/tools/session.js';
 import { registerParentTools } from '../src/tools/parent.js';
@@ -73,7 +74,7 @@ describe('parent tools', () => {
   it('list_students calls parent/getstudents with the parent memberId', async () => {
     const { client, gets } = fakeClient({ 'parent/getstudents': [{ id: 1 }] });
     const h = await createTestHarness((s) => registerParentTools(s, client));
-    const res = parseToolResult(await h.callTool('schoolpass_list_students'));
+    const res = parseFenced(await h.callTool('schoolpass_list_students'));
     expect(res).toEqual([{ id: 1 }]);
     expect(gets[0]).toEqual({ path: 'parent/getstudents', query: { memberId: 5 } });
     await h.close();
@@ -129,7 +130,7 @@ describe('parent tools', () => {
   it('list_drivers compact drops carpool members\' contact and vehicle fields', async () => {
     const { client } = fakeClient({ 'parent/parentdrivers': DRIVERS });
     const h = await createTestHarness((s) => registerParentTools(s, client));
-    const res = parseToolResult<typeof DRIVERS>(await h.callTool('schoolpass_list_drivers', { include_carpool: true }));
+    const res = parseFenced<typeof DRIVERS>(await h.callTool('schoolpass_list_drivers', { include_carpool: true }));
     const text = JSON.stringify(res);
     for (const secret of ['555-0100', '555-0101', 'sam@example.com', 'Example St', 'ABC123']) {
       expect(text).not.toContain(secret);
@@ -152,7 +153,7 @@ describe('parent tools', () => {
   it('list_drivers full returns the carpool payload untouched', async () => {
     const { client } = fakeClient({ 'parent/parentdrivers': DRIVERS });
     const h = await createTestHarness((s) => registerParentTools(s, client));
-    const res = parseToolResult(await h.callTool('schoolpass_list_drivers', { include_carpool: true, view: 'full' }));
+    const res = parseFenced(await h.callTool('schoolpass_list_drivers', { include_carpool: true, view: 'full' }));
     expect(res).toEqual(DRIVERS);
     await h.close();
   });
@@ -223,7 +224,7 @@ describe('dismissal tools', () => {
       'dismissal/getDismissalLocations': [{ id: 1, name: 'Car Line' }],
     });
     const h = await createTestHarness((s) => registerDismissalTools(s, client));
-    const res = parseToolResult(await h.callTool('schoolpass_list_dismissal_locations'));
+    const res = parseFenced(await h.callTool('schoolpass_list_dismissal_locations'));
     expect(res).toEqual([{ id: 1, name: 'Car Line' }]);
     expect(gets[0]!.path).toBe('dismissal/getDismissalLocations');
     await h.close();
@@ -281,6 +282,11 @@ interface ViewCase {
   bodies: Record<string, unknown>;
   /** Where the avatar lives in the response the tool returns. */
   expectStripped: (payload: unknown) => unknown;
+  /**
+   * False for the one read that returns only the parent's OWN record, which
+   * is not fenced as untrusted third-party text (fleet-audit#894).
+   */
+  fenced?: false;
 }
 
 /** A record with an avatar, a page URL, and a field nobody anticipated. */
@@ -304,6 +310,7 @@ const VIEW_CASES: ViewCase[] = [
     register: (s, c) => registerParentTools(s, c),
     bodies: { 'parent/profile': RECORD },
     expectStripped: (p) => p,
+    fenced: false,
   },
   {
     tool: 'schoolpass_list_drivers',
@@ -345,7 +352,7 @@ const VIEW_CASES: ViewCase[] = [
 ];
 
 describe('the view rollout, end to end', () => {
-  it.each(VIEW_CASES)('$tool strips the avatar on the DEFAULT rung', async ({ tool, register, args, bodies, expectStripped }) => {
+  it.each(VIEW_CASES)('$tool strips the avatar on the DEFAULT rung', async ({ tool, register, args, bodies, expectStripped, fenced }) => {
     const { client } = fakeClient(bodies);
     const h = await createTestHarness((s) => register(s, client));
     const raw = await h.callTool(tool, args);
@@ -360,7 +367,7 @@ describe('the view rollout, end to end', () => {
     // Minified: no indentation, no newlines of its own.
     expect(text.split('\n')).toHaveLength(1);
 
-    const record = expectStripped(parseToolResult(raw));
+    const record = expectStripped(fenced === false ? parseToolResult(raw) : parseFenced(raw));
     const first = Array.isArray(record) ? record[0] : (record as { dailyList?: unknown[] })?.dailyList?.[0] ?? record;
     expect(first).not.toHaveProperty('avatar');
     expect(first).toMatchObject({ studentId: 42, somethingNobodyAnticipated: 'kept' });
