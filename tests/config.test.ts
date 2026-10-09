@@ -49,6 +49,19 @@ describe('resolveConfig', () => {
     );
   });
 
+  // fleet-audit#691: the password is a secret, not a token — surrounding
+  // whitespace can be part of it, so trimming it makes the login impossible.
+  it('keeps leading and trailing whitespace in the password', () => {
+    const c = resolveConfig({ ...base, SCHOOLPASS_PASSWORD: '  pass word \t' });
+    expect(c.password).toBe('  pass word \t');
+  });
+
+  it('still treats a whitespace-only password as missing', () => {
+    expect(() => resolveConfig({ ...base, SCHOOLPASS_PASSWORD: '   ' })).toThrow(
+      /SCHOOLPASS_PASSWORD/,
+    );
+  });
+
   it('lists every missing required var in the error', () => {
     try {
       resolveConfig({});

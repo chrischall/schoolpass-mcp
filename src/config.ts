@@ -44,7 +44,13 @@ export class SchoolPassConfigError extends McpToolError {
  */
 export function resolveConfig(env: NodeJS.ProcessEnv = process.env): SchoolPassConfig {
   const email = readEnvVar('SCHOOLPASS_EMAIL', { env });
-  const password = readEnvVar('SCHOOLPASS_PASSWORD', { env });
+  // readEnvVar trims, which would silently alter a password that starts or
+  // ends with whitespace (fleet-audit#691). Use it only to decide whether the
+  // password is SET (blank / sentinel / unsubstituted placeholder = unset), and
+  // keep the raw value when it is.
+  const password = readEnvVar('SCHOOLPASS_PASSWORD', { env }) === undefined
+    ? undefined
+    : env.SCHOOLPASS_PASSWORD;
   const schoolCodeRaw = readEnvVar('SCHOOLPASS_SCHOOL_CODE', { env });
   const apiHostRaw = readEnvVar('SCHOOLPASS_API_HOST', { env });
 
