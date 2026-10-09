@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.9](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.8...v1.0.9) (2026-10-09)
+
+
+### Bug Fixes
+
+* annotate tools truthfully and sync manifests with the served tools ([#101](https://github.com/chrischall/schoolpass-mcp/issues/101)) ([5fdeed7](https://github.com/chrischall/schoolpass-mcp/commit/5fdeed78825c07b2460be0f38f09ec183992a7cd))
+* declare the plugin MCP config under the mcpServers key Claude Code reads ([#102](https://github.com/chrischall/schoolpass-mcp/issues/102)) ([f31af12](https://github.com/chrischall/schoolpass-mcp/commit/f31af12c13421dfddf2a1e9a6e2d55190ca1f6a1))
+* **deps:** update @chrischall/mcp-utils to 3.0.0 ([#100](https://github.com/chrischall/schoolpass-mcp/issues/100)) ([6a8964b](https://github.com/chrischall/schoolpass-mcp/commit/6a8964ba2105806defde90515c194ddafa5ad9d5))
+* fence SchoolPass third-party text as untrusted in tool results ([#98](https://github.com/chrischall/schoolpass-mcp/issues/98)) ([9cae7c3](https://github.com/chrischall/schoolpass-mcp/commit/9cae7c3abb440ab5ff9568b16d1bbc288cdf5a91))
+* resolve low-severity audit findings ([#96](https://github.com/chrischall/schoolpass-mcp/issues/96)) ([8798f1d](https://github.com/chrischall/schoolpass-mcp/commit/8798f1defbde3df7231944c6c6cb481426d36fca))
+
 ## [1.0.8](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.7...v1.0.8) (2026-10-07)
 
 
