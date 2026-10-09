@@ -31,6 +31,9 @@ env:
   - name: SCHOOLPASS_API_HOST
     required: false
     help: Regional API host override. Defaults to busapi-east16-ss.school-pass.net; set it to your school's shard if it is on a different region. Must be an https *.school-pass.net host (anything else is refused, since the password is sent there).
+  - name: SCHOOLPASS_TIMEZONE
+    required: false
+    help: The school's IANA timezone, e.g. America/New_York. The hosted child runs in UTC, so without it the calendar and pickup-change reads default "today" to tomorrow during a US evening.
   - name: SCHOOLPASS_SESSION_CACHE
     required: false
     help: Set to false to disable the on-disk session cache and log in on every process start. Defaults to enabled.
