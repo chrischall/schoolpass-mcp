@@ -33,7 +33,10 @@
         "SCHOOLPASS_EMAIL": "${user_config.schoolpass_email}",
         "SCHOOLPASS_PASSWORD": "${user_config.schoolpass_password}",
         "SCHOOLPASS_SCHOOL_CODE": "${user_config.schoolpass_school_code}",
-        "SCHOOLPASS_API_HOST": "${user_config.schoolpass_api_host}"
+        "SCHOOLPASS_API_HOST": "${user_config.schoolpass_api_host}",
+        "SCHOOLPASS_TIMEZONE": "${user_config.schoolpass_timezone}",
+        "SCHOOLPASS_SESSION_CACHE": "${user_config.schoolpass_session_cache}",
+        "SCHOOLPASS_SESSION_FILE": "${user_config.schoolpass_session_file}"
       }
     }
   },
@@ -88,25 +91,44 @@
       "type": "string",
       "title": "SchoolPass account email",
       "description": "The email address you sign in to your school's SchoolPass portal with.",
-      "required": true
+      "required": false
     },
     "schoolpass_password": {
       "type": "string",
       "title": "SchoolPass account password",
       "description": "Your SchoolPass account password. Stored by the host, sent only to SchoolPass's login endpoint.",
       "sensitive": true,
-      "required": true
+      "required": false
     },
     "schoolpass_school_code": {
       "type": "string",
       "title": "School id (school code)",
       "description": "The numeric school id SchoolPass uses (the AppCode / appCode value; e.g. 1183 for Scholars Academy).",
-      "required": true
+      "required": false
     },
     "schoolpass_api_host": {
       "type": "string",
       "title": "Regional API host (optional)",
       "description": "Override the regional API host if your school is on a different shard (default busapi-east16-ss.school-pass.net). Must be an https *.school-pass.net host.",
+      "required": false
+    },
+    "schoolpass_timezone": {
+      "type": "string",
+      "title": "School timezone (optional)",
+      "description": "The school's IANA timezone (e.g. America/New_York), used for the \"today\" default of the calendar and pickup-change reads. Defaults to the server's local zone; set it when the server runs elsewhere (a hosted server runs in UTC, so evening defaults would otherwise point at tomorrow).",
+      "required": false
+    },
+    "schoolpass_session_cache": {
+      "type": "boolean",
+      "title": "On-disk session cache (optional)",
+      "description": "Set to false to disable the on-disk session cache and re-authenticate on every process start. Defaults to enabled.",
+      "required": false,
+      "default": true
+    },
+    "schoolpass_session_file": {
+      "type": "string",
+      "title": "Session cache file (optional)",
+      "description": "Absolute path for the session cache file. Defaults to $MCP_DATA_DIR/.schoolpass-mcp/session.json.",
       "required": false
     }
   },
