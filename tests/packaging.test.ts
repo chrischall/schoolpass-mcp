@@ -5,8 +5,8 @@
  *    rejects the whole publish with E422 AFTER release-please has already tagged
  *    and cut the GitHub Release — so npm silently never moves. (thumbtack v0.1.0.)
  *  - `files` must include `skills`, or a new skill silently would not ship.
- *  - The `manifest.json` tool roster is not asserted here (the tools are not
- *    listed in manifest.json), but the entry point + node floor are.
+ *  - The `manifest.json` tool roster is asserted in tests/index.test.ts against
+ *    the real registered roster; the entry point + node floor are asserted here.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -34,6 +34,17 @@ describe('package.json publish shape', () => {
     for (const f of ['dist', 'skills', 'server.json', '.claude-plugin']) {
       expect(pkg.files, `files should include ${f}`).toContain(f);
     }
+  });
+
+  it('ships no runtime dependency that nothing imports (dotenv)', () => {
+    // Nothing in src/ imports dotenv (the dev script uses `node --env-file`),
+    // yet as a production dependency every dependabot bump cut a no-op release.
+    const full = readJson<{
+      dependencies?: Record<string, string>;
+      scripts?: Record<string, string>;
+    }>('package.json');
+    expect(full.dependencies ?? {}).not.toHaveProperty('dotenv');
+    expect(full.scripts?.bundle ?? '').not.toContain('--external:dotenv');
   });
 
   it('bin points at the tsc entry point (dist/index.js)', () => {

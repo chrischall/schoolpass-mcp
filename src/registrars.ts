@@ -10,10 +10,13 @@
  * story: prove you're connected, look at your students, then at their schedule,
  * then change it.
  *
- * The surface is parent-scoped. All tools are read-only except the single
- * `confirm`-gated write (`schoolpass_submit_dismissal_change`), whose body shape
- * is derived from the SchoolPass app's own request and returns a dry-run preview
- * unless `confirm: true`.
+ * The surface is parent-scoped. All tools are read-only except the two
+ * confirm-gated writes in `./tools/changes.ts`: `schoolpass_submit_dismissal_change`
+ * (whose body shape is derived from the SchoolPass app's own request) and
+ * `schoolpass_cancel_dismissal_change` (annotated destructive). Each returns a
+ * preview plus a single-use `confirmToken` and only writes on a repeat call with
+ * that token. The `.mcpb` manifest's `tools` array mirrors this roster
+ * (asserted in tests/index.test.ts).
  */
 
 import type { ToolRegistrar } from '@chrischall/mcp-utils';

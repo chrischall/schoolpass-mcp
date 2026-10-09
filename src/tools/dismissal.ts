@@ -9,7 +9,8 @@
  * re-reads the day afterwards rather than trusting the submit's own success.
  */
 
-import { IsoDate, shiftIsoDate, todayIso, toolAnnotations } from '@chrischall/mcp-utils';
+import { IsoDate, shiftIsoDate, toolAnnotations } from '@chrischall/mcp-utils';
+import { schoolToday } from '../dates.js';
 import { viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
@@ -32,7 +33,7 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
       inputSchema: z.object({
         view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
-        start_date: IsoDate.optional().describe('Start of range (YYYY-MM-DD). Defaults to today.'),
+        start_date: IsoDate.optional().describe('Start of range (YYYY-MM-DD). Defaults to today in the school timezone.'),
         end_date: IsoDate.optional().describe('End of range (YYYY-MM-DD). Defaults to 14 days out.'),
       }),
     },
@@ -40,8 +41,8 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
       const data = await client.get(ENDPOINTS.studentCalendar, {
         schoolCode: client.schoolCode,
         studentId: student_id,
-        startDate: start_date ?? todayIso(),
-        endDate: end_date ?? shiftIsoDate(todayIso(), 14),
+        startDate: start_date ?? schoolToday(),
+        endDate: end_date ?? shiftIsoDate(schoolToday(), 14),
       });
       return viewResponse(view, data);
     },
@@ -62,13 +63,13 @@ export function registerDismissalTools(server: McpServer, client: SchoolPassClie
       inputSchema: z.object({
         view: viewArg(),
         student_id: z.number().int().positive().describe('Student id, from schoolpass_list_students.'),
-        date: IsoDate.optional().describe('Date (YYYY-MM-DD). Defaults to today.'),
+        date: IsoDate.optional().describe('Date (YYYY-MM-DD). Defaults to today in the school timezone.'),
       }),
     },
     async ({ student_id, date, view }) => {
       const data = await client.get(ENDPOINTS.pickupChanges, {
         studentId: student_id,
-        date: date ?? todayIso(),
+        date: date ?? schoolToday(),
       });
       return viewResponse(view, data);
     },

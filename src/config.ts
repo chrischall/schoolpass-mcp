@@ -44,9 +44,15 @@ export class SchoolPassConfigError extends McpToolError {
  */
 export function resolveConfig(env: NodeJS.ProcessEnv = process.env): SchoolPassConfig {
   const email = readEnvVar('SCHOOLPASS_EMAIL', { env });
-  const password = readEnvVar('SCHOOLPASS_PASSWORD', { env });
+  // readEnvVar trims, which would silently alter a password that starts or
+  // ends with whitespace (fleet-audit#691). Use it only to decide whether the
+  // password is SET (blank / sentinel / unsubstituted placeholder = unset), and
+  // keep the raw value when it is.
+  const password = readEnvVar('SCHOOLPASS_PASSWORD', { env }) === undefined
+    ? undefined
+    : env.SCHOOLPASS_PASSWORD;
   const schoolCodeRaw = readEnvVar('SCHOOLPASS_SCHOOL_CODE', { env });
-  const apiHost = readEnvVar('SCHOOLPASS_API_HOST', { env }) ?? DEFAULT_API_HOST;
+  const apiHostRaw = readEnvVar('SCHOOLPASS_API_HOST', { env });
 
   const missing: string[] = [];
   if (!email) missing.push('SCHOOLPASS_EMAIL');
@@ -63,5 +69,34 @@ export function resolveConfig(env: NodeJS.ProcessEnv = process.env): SchoolPassC
     );
   }
 
+  const apiHost = apiHostRaw === undefined ? DEFAULT_API_HOST : normalizeApiHost(apiHostRaw);
+
   return { email: email!, password: password!, schoolCode, apiHost };
+}
+
+/** A SchoolPass regional shard: one or more labels under `school-pass.net`. */
+const SCHOOL_PASS_HOST = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+school-pass\.net$/;
+
+/**
+ * Validate a `SCHOOLPASS_API_HOST` override and reduce it to a bare host.
+ *
+ * The login POST sends the account email and password to this host, so it must
+ * be https and under `school-pass.net`: a mistyped `http://` override would put
+ * the password on the wire in cleartext, and a look-alike host would hand it to
+ * a third party (fleet-audit#694). Accepts a bare host or an `https://` origin
+ * with an optional trailing slash; anything with another scheme, a port, a
+ * path, or userinfo is refused.
+ */
+function normalizeApiHost(raw: string): string {
+  const host = raw
+    .replace(/^https:\/\//i, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  if (!SCHOOL_PASS_HOST.test(host)) {
+    throw new SchoolPassConfigError(
+      `SCHOOLPASS_API_HOST must be an https school-pass.net host such as ${DEFAULT_API_HOST} ` +
+        `(got ${JSON.stringify(raw)}).`,
+    );
+  }
+  return host;
 }
