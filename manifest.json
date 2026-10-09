@@ -106,7 +106,7 @@
     "schoolpass_api_host": {
       "type": "string",
       "title": "Regional API host (optional)",
-      "description": "Override the regional API host if your school is on a different shard (default busapi-east16-ss.school-pass.net).",
+      "description": "Override the regional API host if your school is on a different shard (default busapi-east16-ss.school-pass.net). Must be an https *.school-pass.net host.",
       "required": false
     }
   },

@@ -32,7 +32,7 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 | `SCHOOLPASS_EMAIL` | yes | Your SchoolPass parent account email. |
 | `SCHOOLPASS_PASSWORD` | yes | Your SchoolPass password. |
 | `SCHOOLPASS_SCHOOL_CODE` | yes | The numeric school id (the `AppCode` / `appCode` value; e.g. `1183`). |
-| `SCHOOLPASS_API_HOST` | no | Regional API host override (default `busapi-east16-ss.school-pass.net`). |
+| `SCHOOLPASS_API_HOST` | no | Regional API host override (default `busapi-east16-ss.school-pass.net`). Must be an https `*.school-pass.net` host — the password is sent there, so `http://` or any other domain is refused. |
 | `MCP_CONFIRM_MODE` | no | How the two writes confirm on a client that cannot show a prompt: `ask-user` (default — preview + token, the user approves in chat), `auto` (the model may use the token after reviewing the preview), or `refuse`. |
 | `MCP_CONFIRM_ELICITATION` | no | `off` never shows a confirmation prompt, so every client gets the `MCP_CONFIRM_MODE` behaviour. Set it for a client that says it can show prompts but never does (the write hangs — opencode 2.0.x). Default `on`; any other value is treated as `on`, with a warning on stderr. |
 | `MCP_CONFIRM_TTL_SECONDS` | no | How long a confirm token stays valid (default `600`). |

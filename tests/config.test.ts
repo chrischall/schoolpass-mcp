@@ -24,6 +24,31 @@ describe('resolveConfig', () => {
     expect(c.apiHost).toBe('busapi-west1-ss.school-pass.net');
   });
 
+  // fleet-audit#694: the login POST sends the password to this host, so a
+  // cleartext or look-alike override must never be used.
+  it('accepts an https:// origin for a school-pass.net shard, normalised to the bare host', () => {
+    const c = resolveConfig({
+      ...base,
+      SCHOOLPASS_API_HOST: 'HTTPS://BusAPI-West1-SS.School-Pass.net/',
+    });
+    expect(c.apiHost).toBe('busapi-west1-ss.school-pass.net');
+  });
+
+  it.each([
+    ['plain http', 'http://busapi-east16-ss.school-pass.net'],
+    ['another scheme', 'ftp://busapi-east16-ss.school-pass.net'],
+    ['a host outside school-pass.net', 'busapi-east16-ss.example.com'],
+    ['a look-alike suffix', 'busapi-east16-ss.school-pass.net.evil.test'],
+    ['the bare apex with a look-alike prefix', 'evilschool-pass.net'],
+    ['a port', 'busapi-east16-ss.school-pass.net:8080'],
+    ['a path', 'busapi-east16-ss.school-pass.net/x'],
+    ['userinfo', 'https://me@busapi-east16-ss.school-pass.net'],
+  ])('rejects an API host override with %s', (_label, host) => {
+    expect(() => resolveConfig({ ...base, SCHOOLPASS_API_HOST: host })).toThrow(
+      /SCHOOLPASS_API_HOST must be an https school-pass\.net host/,
+    );
+  });
+
   it('lists every missing required var in the error', () => {
     try {
       resolveConfig({});

@@ -30,7 +30,7 @@ env:
     help: Your numeric school id — the AppCode / appCode value the app uses (e.g. 1183 for Scholars Academy). Not a secret.
   - name: SCHOOLPASS_API_HOST
     required: false
-    help: Regional API host override. Defaults to busapi-east16-ss.school-pass.net; set it to your school's shard if it is on a different region.
+    help: Regional API host override. Defaults to busapi-east16-ss.school-pass.net; set it to your school's shard if it is on a different region. Must be an https *.school-pass.net host (anything else is refused, since the password is sent there).
   - name: SCHOOLPASS_SESSION_CACHE
     required: false
     help: Set to false to disable the on-disk session cache and log in on every process start. Defaults to enabled.

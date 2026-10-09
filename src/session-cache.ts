@@ -82,9 +82,12 @@ export function createSessionCache(
       String(config.schoolCode),
       config.email.trim().toLowerCase(),
       config.password,
+      // The regional shard the tokens were issued by: a token minted by one
+      // host is never replayed to another (fleet-audit#694).
+      config.apiHost,
       // Joined on a NUL, written as an escape rather than a literal byte, so a
-      // different (school, email, password) triple cannot collide with this one
-      // by shifting the boundaries between the parts.
+      // different (school, email, password, host) tuple cannot collide with this
+      // one by shifting the boundaries between the parts.
     ].join('\u0000'),
     validate: (raw) => (isCached(raw) ? raw : null),
   });

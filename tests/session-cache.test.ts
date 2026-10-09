@@ -23,6 +23,7 @@ const config = (over: Partial<SchoolPassConfig> = {}): SchoolPassConfig =>
     email: 'parent@example.com',
     password: 'pw1',
     schoolCode: 1234,
+    apiHost: 'busapi-east16-ss.school-pass.net',
     ...over,
   }) as SchoolPassConfig;
 
@@ -74,6 +75,7 @@ describe('createSessionCache', () => {
     ['a rotated password', config({ password: 'pw2' })],
     ['a different parent', config({ email: 'other@example.com' })],
     ['a different school', config({ schoolCode: 9999 })],
+    ['a different API host', config({ apiHost: 'busapi-west1-ss.school-pass.net' })],
   ])('discards the cache on %s', (_label, changed) => {
     createSessionCache(config(), on())!.save(session());
     expect(createSessionCache(changed, on())!.load()).toBeNull();
