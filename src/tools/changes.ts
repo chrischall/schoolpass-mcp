@@ -343,6 +343,9 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           details: preview,
           tool: 'schoolpass_submit_dismissal_change',
           account: String(memberId),
+          // The tool's arguments minus the token: bound into both rails, so an
+          // approval for one change cannot authorise different arguments.
+          args: (({ confirmToken: _token, ...rest }) => rest)(args),
           confirmToken: args.confirmToken,
           subject: () => ({
             target: `${args.student_id}/${args.date}`,
@@ -543,6 +546,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           details: preview,
           tool: 'schoolpass_cancel_dismissal_change',
           account: String(memberId),
+          args: { student_id, date, change_series_id },
           confirmToken,
           subject: () => ({
             target: `${student_id}/${date}/${change.changeSeriesId}`,
