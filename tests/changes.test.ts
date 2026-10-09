@@ -188,7 +188,8 @@ describe('schoolpass_submit_dismissal_change — confirm gate', () => {
       confirmToken: phase1.confirmToken,
     });
     expect(raw.isError).toBe(true);
-    expect(parseToolResult<{ error: string }>(raw).error).toBe('DRAFT_CHANGED');
+    // A DRAFT_CHANGED refusal re-issues the preview, so it comes back fenced.
+    expect(parseFenced<{ error: string }>(raw).error).toBe('DRAFT_CHANGED');
     expect(submits).toHaveLength(0);
     await h.close();
   });
@@ -206,7 +207,7 @@ describe('schoolpass_submit_dismissal_change — confirm gate', () => {
     ];
     const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, confirmToken: phase1.confirmToken });
     expect(raw.isError).toBe(true);
-    const res = parseToolResult<{ error: string; reason: string; confirmToken: string; preview: { currentDay: unknown[] } }>(raw);
+    const res = parseFenced<{ error: string; reason: string; confirmToken: string; preview: { currentDay: unknown[] } }>(raw);
     expect(res.error).toBe('DRAFT_CHANGED');
     expect(res.reason).toBe('revision-changed');
     // ...and the fresh preview shows the day as it is NOW, with a new token.

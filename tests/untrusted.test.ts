@@ -165,3 +165,47 @@ describe('write results — whose before/after snapshots carry the day\'s notes 
     await h.close();
   });
 });
+
+describe('phase-1 confirmation previews — whose currentDay and wouldCancel carry the day\'s descriptions — are fenced', () => {
+  // The riskiest point: the model reads the preview while holding the token
+  // that arms the destructive write, so the preview's third-party text must be
+  // fenced too — with status, confirmToken and instruction still readable.
+  it.each([
+    { tool: 'schoolpass_submit_dismissal_change', args: { student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505 } },
+    { tool: 'schoolpass_cancel_dismissal_change', args: { student_id: 11278, date: '2026-09-14' } },
+  ])('$tool fences its phase-1 preview', async ({ tool, args }) => {
+    const h = await harness();
+    const raw = await h.callTool(tool, args);
+    expect(raw.isError).toBeFalsy();
+    const env = expectFenced(raw);
+    expect(env).toMatchObject({ status: 'confirmation-required', confirmed: false, dispatched: false });
+    expect(typeof env.confirmToken).toBe('string');
+    expect(typeof env.instruction).toBe('string');
+    expect(JSON.stringify(env.preview)).toContain(INJECTION);
+    await h.close();
+  });
+
+  it('a DRAFT_CHANGED refusal (which re-issues a preview and a token) is fenced and stays an error', async () => {
+    let day: unknown[] = [{ ...CHANGE, changeSeriesId: 27000 }];
+    const client = {
+      ...hostileClient(),
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
+        return { dailyList: day };
+      },
+    } as unknown as SchoolPassClient;
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const args = { student_id: 11278, date: '2026-09-14', change_type: 'carpool', move_to_id: 505 };
+    const first = parseToolResult<{ confirmToken: string }>(await h.callTool('schoolpass_submit_dismissal_change', args));
+    day = [{ ...CHANGE, changeSeriesId: 27001 }];
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...args, confirmToken: first.confirmToken });
+    expect(raw.isError).toBe(true);
+    const env = expectFenced(raw);
+    // The refusal carries its own `note`, so the shared envelope nests it under `data`.
+    const data = env.data as { error: string; confirmToken: string; preview: unknown };
+    expect(data.error).toBe('DRAFT_CHANGED');
+    expect(typeof data.confirmToken).toBe('string');
+    expect(JSON.stringify(data.preview)).toContain(INJECTION);
+    await h.close();
+  });
+});

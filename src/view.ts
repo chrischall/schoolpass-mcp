@@ -7,6 +7,7 @@ import {
   viewParam,
   type View,
 } from '@chrischall/mcp-utils';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 
 /**
  * The note heading every untrusted-content envelope this server returns
@@ -23,6 +24,33 @@ export const SPS_UNTRUSTED_NOTE =
 /** {@link untrustedResult} with this server's note. */
 export function spsUntrustedResult(payload: unknown): ReturnType<typeof untrustedResult> {
   return untrustedResult(payload, { note: SPS_UNTRUSTED_NOTE });
+}
+
+/**
+ * Fence a confirm-gate result that carries a preview (chrischall/fleet-audit#894).
+ *
+ * `requireConfirmationWithFallback`'s phase-1 "confirmation-required" result,
+ * and its DRAFT_CHANGED refusal, both hand back the preview — whose
+ * `currentDay` and `wouldCancel` carry the day's descriptions — next to a live
+ * `confirmToken`. That is the riskiest place for an injection to land, so the
+ * payload is wrapped in the same envelope as every other result here; status,
+ * confirmToken and instruction stay readable inside it, and `isError` is kept.
+ * Gate results without a preview (token errors, elicitation outcomes) carry no
+ * third-party text and pass through unchanged.
+ */
+export function fenceConfirmationGate<T extends object>(result: T): T | CallToolResult {
+  if (!('content' in result) || !Array.isArray(result.content)) return result; // an elicitation round-trip
+  const block = (result as CallToolResult).content[0];
+  if (block?.type !== 'text') return result;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(block.text);
+  } catch {
+    return result;
+  }
+  if (payload === null || typeof payload !== 'object' || !('preview' in payload)) return result;
+  const fenced = spsUntrustedResult(payload);
+  return (result as CallToolResult).isError ? { ...fenced, isError: true } : fenced;
 }
 
 /**

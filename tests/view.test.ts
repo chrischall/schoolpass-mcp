@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { viewResponse, viewArg, SPS_VIEWS } from '../src/view.js';
+import { viewResponse, viewArg, SPS_VIEWS, fenceConfirmationGate } from '../src/view.js';
 
 const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0]!.text as string);
 
@@ -106,5 +106,27 @@ describe('whitespace', () => {
   it('minifies on the full rung too', () => {
     const text = viewResponse('full', { a: 1, b: { c: 2 } }).content[0]!.text as string;
     expect(text).toBe('{"a":1,"b":{"c":2}}');
+  });
+});
+
+describe('fenceConfirmationGate', () => {
+  it('fences a gate result that carries a preview, keeping isError', () => {
+    const text = JSON.stringify({ status: 'confirmation-rejected', note: 'n', preview: { x: 1 }, confirmToken: 't' });
+    const out = fenceConfirmationGate({ content: [{ type: 'text', text }], isError: true });
+    expect(out.isError).toBe(true);
+    const env = JSON.parse((out as { content: { text: string }[] }).content[0]!.text);
+    expect(env).toMatchObject({ untrusted_content: true, data: { confirmToken: 't', preview: { x: 1 } } });
+  });
+
+  it('passes through results with no preview, non-JSON or non-text content, and elicitation round-trips', () => {
+    const cases: object[] = [
+      { content: [{ type: 'text', text: JSON.stringify({ status: 'confirmation-rejected', error: 'TOKEN_REUSED' }) }], isError: true },
+      { content: [{ type: 'text', text: 'null' }] },
+      { content: [{ type: 'text', text: 'not json' }] },
+      { content: [{ type: 'image', data: '', mimeType: 'image/png' }] },
+      { content: [] },
+      { inputRequests: {} },
+    ];
+    for (const r of cases) expect(fenceConfirmationGate(r)).toBe(r);
   });
 });

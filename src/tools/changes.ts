@@ -49,7 +49,7 @@ import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { AdType, ENDPOINTS, SchoolPassTimeoutError, StudentChangeType } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
-import { spsUntrustedResult } from '../view.js';
+import { fenceConfirmationGate, spsUntrustedResult } from '../view.js';
 
 /**
  * Day-of-week id the API expects in `dateSet.daysOfWeek`, matching the app's
@@ -234,8 +234,9 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         '(verified:true); if the re-read fails or does not show it yet the result is verified:false — the ' +
         'change WAS submitted, so do not resubmit; re-read the calendar instead. ' +
         'Get student_id from schoolpass_list_students and move_to_id from schoolpass_list_dismissal_locations ' +
-        '(a dismissal location id) or the student calendar (a carpool moveToId). The result\'s before/after ' +
-        `calendar snapshots carry the day's notes and descriptions. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
+        '(a dismissal location id) or the student calendar (a carpool moveToId). The phase-1 preview\'s ' +
+        'currentDay and the result\'s before/after calendar snapshots carry the day\'s notes and descriptions; ' +
+        `both come fenced. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({ title: 'Submit dismissal change', readOnly: false, openWorld: true, destructive: true }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
@@ -351,7 +352,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           }),
         }),
       );
-      if (gate) return gate;
+      if (gate) return fenceConfirmationGate(gate);
 
       const doNotResubmit =
         'Do not resubmit it, or SchoolPass may record a duplicate change. ' +
@@ -439,7 +440,8 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'date to its default. ' +
         CONFIRM_NOTE +
         ' Once confirmed it deletes the change and re-reads the calendar to confirm the day is back to default. ' +
-        `The result's before/after calendar snapshots carry the day's notes and descriptions. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
+        "The phase-1 preview's currentDay and wouldCancel, and the result's before/after calendar snapshots, " +
+        `carry the day's notes and descriptions; both come fenced. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: true, idempotent: false }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
@@ -550,7 +552,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
           }),
         }),
       );
-      if (gate) return gate;
+      if (gate) return fenceConfirmationGate(gate);
 
       const response = await client.deleteStudentChange(deleteArgs);
       const after = await readDay(student_id, date);
