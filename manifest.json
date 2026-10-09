@@ -37,6 +37,52 @@
       }
     }
   },
+  "tools": [
+    {
+      "name": "schoolpass_healthcheck",
+      "description": "Reachability and authentication, reported separately."
+    },
+    {
+      "name": "schoolpass_whoami",
+      "description": "The parent identity the server signed in as."
+    },
+    {
+      "name": "schoolpass_list_students",
+      "description": "Your linked students: name, grade, home dismissal location, aftercare."
+    },
+    {
+      "name": "schoolpass_get_profile",
+      "description": "The parent account profile."
+    },
+    {
+      "name": "schoolpass_list_drivers",
+      "description": "Authorized pickup drivers, optionally with their carpools."
+    },
+    {
+      "name": "schoolpass_get_calendar",
+      "description": "A student's arrival and dismissal calendar over a date range."
+    },
+    {
+      "name": "schoolpass_list_pickup_changes",
+      "description": "Pickup and dismissal changes for a student on a date."
+    },
+    {
+      "name": "schoolpass_list_dismissal_locations",
+      "description": "The school's dismissal locations, with ids."
+    },
+    {
+      "name": "schoolpass_get_school_info",
+      "description": "Basic school info and per-school config."
+    },
+    {
+      "name": "schoolpass_submit_dismissal_change",
+      "description": "Submit a dismissal or arrival change (confirm-gated: preview plus a single-use confirm token)."
+    },
+    {
+      "name": "schoolpass_cancel_dismissal_change",
+      "description": "Cancel a dismissal change, back to the default (confirm-gated: preview plus a confirm token)."
+    }
+  ],
   "user_config": {
     "schoolpass_email": {
       "type": "string",

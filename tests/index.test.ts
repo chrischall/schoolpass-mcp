@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createTestHarness } from '@chrischall/mcp-utils/test';
 import { TOOL_REGISTRARS } from '../src/registrars.js';
 import { SchoolPassClient } from '../src/client.js';
@@ -42,5 +43,24 @@ describe('tool roster', () => {
       expect((tool.description ?? '').length).toBeGreaterThan(20);
     }
     await h.close();
+  });
+});
+
+describe('manifest.json tools', () => {
+  // The .mcpb manifest's `tools` array is what a hosted enabledTools allowlist
+  // and the marketplace listing read; an absent or stale list shows zero (or
+  // the wrong) tools there. Pin it to the real roster.
+  const manifest = JSON.parse(
+    readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'),
+  ) as { tools?: Array<{ name: string; description?: string }> };
+
+  it('lists exactly the registered tools', () => {
+    expect((manifest.tools ?? []).map((t) => t.name).sort()).toEqual(EXPECTED_TOOLS);
+  });
+
+  it('gives every listed tool a description', () => {
+    for (const tool of manifest.tools ?? []) {
+      expect(tool.description, `${tool.name} description`).toBeTruthy();
+    }
   });
 });

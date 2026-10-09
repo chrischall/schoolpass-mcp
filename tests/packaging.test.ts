@@ -5,8 +5,8 @@
  *    rejects the whole publish with E422 AFTER release-please has already tagged
  *    and cut the GitHub Release — so npm silently never moves. (thumbtack v0.1.0.)
  *  - `files` must include `skills`, or a new skill silently would not ship.
- *  - The `manifest.json` tool roster is not asserted here (the tools are not
- *    listed in manifest.json), but the entry point + node floor are.
+ *  - The `manifest.json` tool roster is asserted in tests/index.test.ts against
+ *    the real registered roster; the entry point + node floor are asserted here.
  */
 
 import { describe, expect, it } from 'vitest';
