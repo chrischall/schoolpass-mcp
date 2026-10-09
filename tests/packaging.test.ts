@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,5 +64,21 @@ describe('manifest.json', () => {
 
   it('node runtime floor stays on an LTS (>=22.x), not 26', () => {
     expect(manifest.compatibility.runtimes.node).toMatch(/^>=22\./);
+  });
+});
+
+describe('.claude-plugin/plugin.json', () => {
+  const plugin = readJson<Record<string, unknown>>('.claude-plugin/plugin.json');
+
+  it('declares its MCP config under mcpServers, the key Claude Code reads', () => {
+    // `mcp` is not a plugin.json field: Claude Code ignores it at load time
+    // (`claude plugin validate` warns "Unknown field 'mcp'"). It only worked
+    // because ./.mcp.json is the default; with any other path it breaks installs.
+    expect(plugin).not.toHaveProperty('mcp');
+    expect(plugin.mcpServers).toBe('./.mcp.json');
+  });
+
+  it('points mcpServers at a file that exists', () => {
+    expect(existsSync(join(ROOT, plugin.mcpServers as string))).toBe(true);
   });
 });
