@@ -36,6 +36,17 @@ describe('package.json publish shape', () => {
     }
   });
 
+  it('ships no runtime dependency that nothing imports (dotenv)', () => {
+    // Nothing in src/ imports dotenv (the dev script uses `node --env-file`),
+    // yet as a production dependency every dependabot bump cut a no-op release.
+    const full = readJson<{
+      dependencies?: Record<string, string>;
+      scripts?: Record<string, string>;
+    }>('package.json');
+    expect(full.dependencies ?? {}).not.toHaveProperty('dotenv');
+    expect(full.scripts?.bundle ?? '').not.toContain('--external:dotenv');
+  });
+
   it('bin points at the tsc entry point (dist/index.js)', () => {
     expect(pkg.bin?.['schoolpass-mcp']).toBe('dist/index.js');
   });

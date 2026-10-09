@@ -4,11 +4,11 @@
  *
  * Two failure modes this catches, both of which unit tests structurally cannot:
  *
- *  1. **An eager import of an esbuild-externalised dependency.** `dist/bundle.js`
- *     is the `.mcpb` artifact and ships with NO `node_modules`; `dotenv` is
- *     `--external`, so a top-level `import 'dotenv'` anywhere in the graph would
- *     crash the shipped server on launch while every test stayed green. The
- *     bundle is therefore copied ALONE into an empty temp dir before it is run.
+ *  1. **An import the bundle cannot resolve on its own.** `dist/bundle.js` is
+ *     the `.mcpb` artifact and ships with NO `node_modules`, so any dependency
+ *     left `--external` (or required at runtime) would crash the shipped server
+ *     on launch while every test stayed green. The bundle is therefore copied
+ *     ALONE into an empty temp dir before it is run.
  *  2. **A `bin` that points at a path `tsc` never emitted.** `dist/index.js` is
  *     the npm entry point, run here from the repo root with `node_modules`.
  *
