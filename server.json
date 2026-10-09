@@ -19,25 +19,31 @@
         {
           "name": "SCHOOLPASS_EMAIL",
           "description": "Your SchoolPass parent account email address.",
-          "isRequired": true,
+          "isRequired": false,
           "format": "string"
         },
         {
           "name": "SCHOOLPASS_PASSWORD",
           "description": "Your SchoolPass parent account password.",
-          "isRequired": true,
+          "isRequired": false,
           "format": "string",
           "isSecret": true
         },
         {
           "name": "SCHOOLPASS_SCHOOL_CODE",
           "description": "The numeric school id (AppCode) SchoolPass uses to select your school.",
-          "isRequired": true,
+          "isRequired": false,
           "format": "string"
         },
         {
           "name": "SCHOOLPASS_API_HOST",
           "description": "Optional regional API host override (default busapi-east16-ss.school-pass.net).",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SCHOOLPASS_TIMEZONE",
+          "description": "The school's IANA timezone (e.g. America/New_York), used for the \"today\" default of the calendar and pickup-change reads. Defaults to the server's local zone; set it when the server runs elsewhere (a hosted server runs in UTC, so evening defaults would otherwise point at tomorrow).",
           "isRequired": false,
           "format": "string"
         },
