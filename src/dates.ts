@@ -17,14 +17,12 @@ import { SchoolPassConfigError } from './config.js';
 export function schoolToday(env: NodeJS.ProcessEnv = process.env, now: Date = new Date()): string {
   const timeZone = readEnvVar('SCHOOLPASS_TIMEZONE', { env });
   if (timeZone === undefined) return todayIso(now);
-  let format: Intl.DateTimeFormat;
   try {
-    // en-CA formats a date as yyyy-MM-dd.
-    format = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+    // todayIso throws a RangeError for an explicit zone Intl does not know.
+    return todayIso({ now, timeZone });
   } catch {
     throw new SchoolPassConfigError(
       `SCHOOLPASS_TIMEZONE must be an IANA timezone such as America/New_York (got ${JSON.stringify(timeZone)}).`,
     );
   }
-  return format.format(now);
 }

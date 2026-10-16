@@ -315,6 +315,25 @@ describe('SchoolPassClient.healthcheck', () => {
     expect(health.error).toBeTruthy();
   });
 
+  it('never returns more than a short version string, whatever the probe answers', async () => {
+    const { fetchImpl } = scriptedFetch(() => new Response('[]', { status: 200 }));
+    const page = '<html>' + 'x'.repeat(50_000) + '</html>';
+    const wrapped: FetchLike = async (url, init) =>
+      url.includes('/version') ? new Response(page, { status: 200 }) : fetchImpl(url, init);
+    const client = new SchoolPassClient({ env, fetchImpl: wrapped });
+    const health = await client.healthcheck();
+    expect(typeof health.version).toBe('string');
+    expect((health.version as string).length).toBeLessThanOrEqual(200);
+  });
+
+  it('passes a structured (JSON object) version through unchanged', async () => {
+    const { fetchImpl } = scriptedFetch(() => new Response('[]', { status: 200 }));
+    const wrapped: FetchLike = async (url, init) =>
+      url.includes('/version') ? new Response(JSON.stringify({ v: '1.2' }), { status: 200 }) : fetchImpl(url, init);
+    const client = new SchoolPassClient({ env, fetchImpl: wrapped });
+    expect((await client.healthcheck()).version).toEqual({ v: '1.2' });
+  });
+
   it('reports NOT reachable when the version probe throws', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('ECONNREFUSED');

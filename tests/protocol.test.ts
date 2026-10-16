@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { withCallSignal } from '@chrischall/mcp-utils';
+import { ResponseTooLargeError } from '@chrischall/mcp-utils';
 import {
+  MAX_RESPONSE_BYTES,
   REQUEST_TIMEOUT_MS,
   SchoolPassApiError,
   SchoolPassTimeoutError,
@@ -200,5 +202,110 @@ describe('sendRequest — deadline and cancellation', () => {
       sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl: deaf, timeoutMs: 5_000 }),
     ).catch((e: unknown) => e);
     expect((err as Error).name).toBe('AbortError');
+  });
+});
+
+describe('sendRequest — response size bound', () => {
+  it('caps a response at 4 MiB', () => {
+    expect(MAX_RESPONSE_BYTES).toBe(4 * 1024 * 1024);
+  });
+
+  it('refuses a body whose Content-Length is over the cap, without reading it', async () => {
+    let pulled = false;
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        new ReadableStream({
+          pull(c) {
+            pulled = true;
+            c.enqueue(new TextEncoder().encode('x'));
+            c.close();
+          },
+        }, { highWaterMark: 0 }),
+        { status: 200, headers: { 'content-length': String(MAX_RESPONSE_BYTES + 1) } },
+      );
+    const err = await sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ResponseTooLargeError);
+    expect(pulled).toBe(false);
+  });
+
+  it('stops reading a streamed body as soon as it passes the cap', async () => {
+    const chunk = new Uint8Array(1024 * 1024).fill(0x61);
+    let sent = 0;
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        new ReadableStream({
+          pull(c) {
+            sent++;
+            if (sent > 16) c.close(); // 16 MiB total, so an uncapped read ends instead of OOMing
+            else c.enqueue(chunk);
+          },
+        }),
+        { status: 200 },
+      );
+    const err = await sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ResponseTooLargeError);
+    expect(sent).toBeLessThan(8);
+  });
+
+  it('refuses an over-cap Content-Length even with no body, or a body whose cancel throws', async () => {
+    const big = { 'content-length': String(MAX_RESPONSE_BYTES + 1) };
+    const responses = [
+      () => new Response(null, { status: 200, headers: big }),
+      () =>
+        new Response(
+          new ReadableStream({ cancel() { throw new Error('odd stream'); } }, { highWaterMark: 0 }),
+          { status: 200, headers: big },
+        ),
+    ];
+    for (const make of responses) {
+      const err = await sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl: async () => make() })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ResponseTooLargeError);
+    }
+  });
+
+  it('still refuses an over-cap stream whose cancel throws', async () => {
+    const chunk = new Uint8Array(1024 * 1024);
+    let sent = 0;
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        new ReadableStream({
+          pull(c) {
+            sent++;
+            if (sent > 16) c.close();
+            else c.enqueue(chunk);
+          },
+          cancel() {
+            throw new Error('odd stream');
+          },
+        }),
+        { status: 200 },
+      );
+    const err = await sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ResponseTooLargeError);
+  });
+
+  it('reads a null body (204-style) as empty', async () => {
+    const res = await sendRequest('http://x/api/y', {
+      method: 'GET', headers: {}, fetchImpl: async () => new Response(null, { status: 204 }),
+    });
+    expect(res.status).toBe(204);
+    expect(res.json).toBe(false);
+  });
+
+  it('still reads a normal body (multi-byte UTF-8 split across chunks)', async () => {
+    const bytes = new TextEncoder().encode(JSON.stringify({ name: 'Zoë' }));
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        new ReadableStream({
+          start(c) {
+            for (const b of bytes) c.enqueue(new Uint8Array([b]));
+            c.close();
+          },
+        }),
+        { status: 200 },
+      );
+    const res = await sendRequest('http://x/api/y', { method: 'GET', headers: {}, fetchImpl });
+    expect(res.body).toEqual({ name: 'Zoë' });
   });
 });
