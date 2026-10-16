@@ -254,6 +254,42 @@ describe('schoolpass_submit_dismissal_change — confirm gate', () => {
     await h.close();
   });
 
+  // Ownership is checked before the child's calendar is read: if the calendar
+  // route were school-scoped, a foreign id must not reach it, and the cancel
+  // tool's refusal must not echo another child's changeSeriesIds.
+  it.each([
+    ['schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, student_id: 99999 }],
+    ['schoolpass_cancel_dismissal_change', { student_id: 99999, date: '2026-09-14' }],
+    ['schoolpass_cancel_dismissal_change', { student_id: 99999, date: '2026-09-14', change_series_id: 1 }],
+  ])('%s checks the student belongs to this parent before reading the calendar', async (tool, args) => {
+    let calendarReads = 0;
+    const { client, submits } = fakeClient({
+      calendar: () => {
+        calendarReads++;
+        return { dailyList: [LANDED_CARPOOL, { ...LANDED_CARPOOL, changeSeriesId: 4343 }] };
+      },
+    });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool(tool, args);
+    expect(raw.isError).toBe(true);
+    const text = (raw.content[0] as { text: string }).text;
+    expect(text).toMatch(/not one of this parent/);
+    expect(text).not.toMatch(/4242|4343/);
+    expect(calendarReads).toBe(0);
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('cancel refuses a date with nothing cancellable for one of this parent’s students', async () => {
+    const { client, submits } = fakeClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_cancel_dismissal_change', { student_id: 11278, date: '2026-09-14' });
+    expect(raw.isError).toBe(true);
+    expect((raw.content[0] as { text: string }).text).toMatch(/No cancellable change/);
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
   it('refuses the write under MCP_CONFIRM_MODE=refuse on a client that cannot be prompted', async () => {
     process.env.MCP_CONFIRM_MODE = 'refuse';
     const { client, submits } = fakeClient();

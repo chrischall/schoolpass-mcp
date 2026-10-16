@@ -21,7 +21,7 @@
  *    configurable so a school in another region can point at its own shard.
  */
 
-import { McpToolError, truncateErrorMessage, withAmbientCancellation } from '@chrischall/mcp-utils';
+import { McpToolError, ResponseTooLargeError, truncateErrorMessage, withAmbientCancellation } from '@chrischall/mcp-utils';
 
 /** Default regional API host. Overridable via `SCHOOLPASS_API_HOST`. */
 export const DEFAULT_API_HOST = 'busapi-east16-ss.school-pass.net';
@@ -34,6 +34,13 @@ export const DEFAULT_API_HOST = 'busapi-east16-ss.school-pass.net';
  * duplicates a child's change (`docs/SCHOOLPASS-API.md`, "Traps").
  */
 export const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Largest response body {@link sendRequest} will buffer. SchoolPass answers
+ * are small JSON (a month's calendar is kilobytes); anything near this is a
+ * WAF page or a runaway upstream, and is refused rather than held in memory.
+ */
+export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 /**
  * Build the API root for a host. Ends in `/` so endpoint paths concatenate
@@ -285,7 +292,7 @@ export async function sendRequest(
       }),
       aborted,
     ]);
-    const text = await Promise.race([response.text(), aborted]);
+    const text = await readTextCapped(response, aborted);
     return parseRaw(text, response);
   } catch (err) {
     if (deadline.aborted) throw new SchoolPassTimeoutError(url, timeoutMs, err);
@@ -295,6 +302,39 @@ export async function sendRequest(
     // so the listener must not: one leaked closure per request otherwise.
     signal.removeEventListener('abort', onAbort!);
   }
+}
+
+/**
+ * Read the body as UTF-8, refusing more than {@link MAX_RESPONSE_BYTES}: a
+ * `Content-Length` over the cap is refused unread, and a streamed body is
+ * cancelled the moment it passes it. Every chunk is raced against `aborted`,
+ * so the deadline and the call's cancellation still cover the body read.
+ */
+async function readTextCapped(response: Response, aborted: Promise<never>): Promise<string> {
+  const tooLarge = () => new ResponseTooLargeError('SchoolPass', MAX_RESPONSE_BYTES);
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+    void response.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) throw tooLarge();
+      text += decoder.decode(value, { stream: true });
+    }
+  } catch (err) {
+    void reader.cancel().catch(() => {});
+    throw err;
+  }
+  return text + decoder.decode();
 }
 
 /** Parse the response text into a {@link SchoolPassRawResponse}. */

@@ -20,7 +20,7 @@
 
 import { TokenManager } from '@chrischall/mcp-utils/session';
 import { createHash } from 'node:crypto';
-import { EdgeBlockedError, buildQueryString, detectEdgeBlock } from '@chrischall/mcp-utils';
+import { EdgeBlockedError, buildQueryString, detectEdgeBlock, truncateErrorMessage } from '@chrischall/mcp-utils';
 import {
   SchoolPassAuthRejectedError,
   login,
@@ -364,7 +364,9 @@ export class SchoolPassClient {
         { method: 'GET', headers: buildHeaders(config.schoolCode), fetchImpl: this.fetchImpl },
       );
       reachable = res.status >= 200 && res.status < 300;
-      version = res.body;
+      // Only a short label: a WAF/HTML page here would otherwise be returned
+      // verbatim as the "version".
+      version = typeof res.body === 'string' ? truncateErrorMessage(res.body, 160) : res.body;
     } catch (err) {
       return { reachable: false, version: undefined, authenticated: false, error: String(err) };
     }

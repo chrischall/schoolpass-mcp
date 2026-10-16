@@ -185,7 +185,8 @@ function describeDay(entries: ChangeEntry[]): Record<string, unknown>[] {
 /**
  * Resolve a `student_id` to one of THIS parent's students, by name. A
  * dismissal change is approved for a child, not for a number — and an id that
- * is not on the parent's list is refused outright, before any write, rather
+ * is not on the parent’s list is refused outright, before its calendar is read
+ * or anything is written, rather
  * than previewed as "student 99999".
  */
 async function requireStudent(client: SchoolPassClient, studentId: number): Promise<{ id: number; name: string }> {
@@ -308,8 +309,10 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       // "current state" and — through the token's revision — the guard that a
       // confirmation acts only on the day the parent actually looked at. It is
       // also the `before` half of the landed-check after the write.
-      const before = await readDay(args.student_id, args.date);
+      // Ownership first: a foreign student_id is refused before its calendar
+      // is ever read (the calendar route takes an arbitrary id).
       const student = await requireStudent(client, args.student_id);
+      const before = await readDay(args.student_id, args.date);
       const memberId = await client.getMemberId();
       const willSend = {
         method: 'POST',
@@ -463,6 +466,10 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       }),
     },
     async ({ student_id, date, change_series_id, confirmToken }, ctx: ServerContext) => {
+      // Ownership first, so neither the calendar read nor the refusal hints
+      // below (which list the day's changeSeriesIds) ever run for a student
+      // this parent does not have.
+      const student = await requireStudent(client, student_id);
       const before = await readDay(student_id, date);
       const cancellable = before.filter((e) => e.isDefault === false && e.changeSeriesId != null);
       if (cancellable.length === 0) {
@@ -500,7 +507,6 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         change = cancellable[0]!;
       }
 
-      const student = await requireStudent(client, student_id);
       const memberId = await client.getMemberId();
       const deleteArgs = {
         changeSeriesId: change.changeSeriesId!,
