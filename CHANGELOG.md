@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.10](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.9...v1.0.10) (2026-10-16)
+
+
+### Bug Fixes
+
+* **changes:** check a student belongs to this parent before reading their calendar ([#106](https://github.com/chrischall/schoolpass-mcp/issues/106)) ([628dcc4](https://github.com/chrischall/schoolpass-mcp/commit/628dcc4258e534b49c157463d03e37dc02a66c9d))
+* **deps:** bump the production-dependencies group with 2 updates ([#104](https://github.com/chrischall/schoolpass-mcp/issues/104)) ([fee30e2](https://github.com/chrischall/schoolpass-mcp/commit/fee30e2c93c798d11cac4112b519e960fd9e16eb))
+
 ## [1.0.9](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.8...v1.0.9) (2026-10-09)
 
 
