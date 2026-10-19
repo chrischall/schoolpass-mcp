@@ -16,6 +16,13 @@ version: 1
 name: SchoolPass
 slug: schoolpass
 summary: A parent's SchoolPass students, arrival/dismissal calendar, pickup changes, drivers, and confirm-gated dismissal-change writes.
+examples:
+  - prompt: How is my kid getting home from school on Friday? Is there a pickup change on file?
+    note: Reads the dismissal calendar and that day's pickup changes.
+  - prompt: Who is on my authorized pickup drivers list in SchoolPass?
+    note: Lists your approved drivers; read-only.
+  - prompt: What dismissal locations does my school offer, and which one is my child's default?
+    note: School dismissal locations plus each student's home location.
 env:
   - name: SCHOOLPASS_EMAIL
     secret: true
