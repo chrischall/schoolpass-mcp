@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.11](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.10...v1.0.11) (2026-10-19)
+
+
+### Documentation
+
+* **mint:** add sample prompts for the public catalog ([#109](https://github.com/chrischall/schoolpass-mcp/issues/109)) ([abbac9b](https://github.com/chrischall/schoolpass-mcp/commit/abbac9babde3c4ae299c1d0a6dd1a0e2048f5d9c))
+
 ## [1.0.10](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.9...v1.0.10) (2026-10-16)
 
 
