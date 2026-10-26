@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.11](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.10...v1.0.11) (2026-10-26)
+
+
+### Bug Fixes
+
+* **deps:** bump the production-dependencies group with 2 updates ([#112](https://github.com/chrischall/schoolpass-mcp/issues/112)) ([aafb3be](https://github.com/chrischall/schoolpass-mcp/commit/aafb3be28bf0eb6653e397d668d645614161e91e))
+
+
+### Documentation
+
+* **mint:** add sample prompts for the public catalog ([#109](https://github.com/chrischall/schoolpass-mcp/issues/109)) ([abbac9b](https://github.com/chrischall/schoolpass-mcp/commit/abbac9babde3c4ae299c1d0a6dd1a0e2048f5d9c))
+
 ## [1.0.10](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.9...v1.0.10) (2026-10-16)
 
 
