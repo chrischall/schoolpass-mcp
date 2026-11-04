@@ -25,6 +25,8 @@ Parent-scoped: read tools plus a confirm-gated dismissal-change write/cancel.
 | `schoolpass_submit_dismissal_change` | Submit a dismissal/arrival change (confirm-gated: preview + single-use `confirmToken`). |
 | `schoolpass_cancel_dismissal_change` | Cancel a change, back to default (confirm-gated: preview + `confirmToken`). |
 
+When the server can list your students at start, `student_id` on `schoolpass_get_calendar` and `schoolpass_list_pickup_changes` is published as a string enum of their names (it was an integer id before). The names are the schema's contract; the server still accepts the integer student id from `schoolpass_list_students`, so a client that does not validate against the schema keeps working.
+
 ## Configuration
 
 | Env var | Required | Notes |
