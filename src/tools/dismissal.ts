@@ -59,7 +59,7 @@ const calendarViewArg = () =>
     .describe(
       'Response shape. "compact" (default) strips image/avatar URLs; "full" returns SchoolPass\'s payload ' +
         'untouched; "brief" returns one line per day entry: <change> <side> — <YYYY-MM-DD or "no date"> — ' +
-        '<default|changed>.',
+        '<default|changed>; a range with no entries answers the single line "-- none".',
     );
 
 export function registerDismissalTools(
@@ -103,7 +103,8 @@ export function registerDismissalTools(
       if (view === 'brief') {
         const days = (data as { dailyList?: unknown } | undefined)?.dailyList;
         const lines = Array.isArray(days) ? days.map(calendarBriefLine) : [];
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        // An empty range answers the contract's emptiness note, never empty text.
+        return { content: [{ type: 'text' as const, text: lines.length ? lines.join('\n') : '-- none' }] };
       }
       return viewResponse(view, data, { untrusted: true });
     },

@@ -87,7 +87,8 @@ one returns a record with holes in it that still reads like a verified answer.
 `<change> <side> — <YYYY-MM-DD or "no date"> — <default|changed>` (e.g.
 `carpool departure — 2026-11-05 — default`). It is built from the entry's
 change type, side, date and default flag only — never its description — so it
-carries no third-party text and comes unfenced.
+carries no third-party text and comes unfenced. A range with no entries
+answers the single note line `-- none`.
 
 `view: "full"` returns the record untouched, photos included. There is **no
 `raw` rung**: `full` already IS the untouched payload, so a third value could
