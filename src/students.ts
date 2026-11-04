@@ -113,11 +113,18 @@ export function studentIdArg(students: StudentDirectory | null | undefined) {
   if (!students) return z.number().int().positive().describe(ID_DESCRIPTION);
   // A numeric id is turned into its digit string BEFORE validation, so the
   // published property is one plain string enum of names while a caller that
-  // does not validate against it can still send the id it already holds.
+  // does not validate against it can still send the integer id it already
+  // holds (this property was `{type: integer}` before the enum). The ids stay
+  // OUT of the enum on purpose: a host that fans a question out over the
+  // enum's values (mcp-host context groups) would read every student twice,
+  // and an `anyOf` would hide the top-level `enum` that host reads.
   return z
     .preprocess((v) => (typeof v === 'number' ? String(v) : v), z.string().min(1))
     .meta({ enum: students.labels })
-    .describe('The student, by name as listed here. A student id from schoolpass_list_students is also accepted.');
+    .describe(
+      'The student, by name as listed here. The server also resolves an integer student id from schoolpass_list_students, ' +
+        'but this schema offers the names only.',
+    );
 }
 
 /** Resolve a `student_id` argument (label or id) to the numeric id SchoolPass takes. */

@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { createTestHarness } from '@chrischall/mcp-utils/test';
 import type { SchoolPassClient } from '../src/client.js';
 import { toolRegistrars } from '../src/registrars.js';
-import { STUDENT_LIST_TIMEOUT_MS, loadStudentDirectory, resolveStudentId, type StudentDirectory } from '../src/students.js';
+import {
+  STUDENT_LIST_TIMEOUT_MS,
+  buildStudentDirectory,
+  loadStudentDirectory,
+  resolveStudentId,
+  studentIdArg,
+  type StudentDirectory,
+} from '../src/students.js';
 import { calendarBriefLine } from '../src/tools/dismissal.js';
 
 /**
@@ -157,19 +164,8 @@ describe('_meta.mint on every served tool', () => {
 });
 
 function directory(): StudentDirectory {
-  // Built through the real loader so the test exercises the same labels.
-  const labels = ['Alex Example', 'Sam Sample'];
-  const ids = new Map([['alex example', 101], ['sam sample', 202]]);
-  return {
-    labels,
-    resolve(value) {
-      const n = Number(String(value).trim());
-      if (Number.isInteger(n) && n > 0) return n;
-      const id = ids.get(String(value).trim().toLowerCase());
-      if (id === undefined) throw new Error(`Unknown student "${value}"`);
-      return id;
-    },
-  };
+  // Built through the real builder so the test exercises the same labels and resolution.
+  return buildStudentDirectory(STUDENTS.map((s) => ({ id: s.id, name: `${s.firstName} ${s.lastName}` })))!;
 }
 
 describe('the student subject enum', () => {
@@ -219,6 +215,38 @@ describe('the student subject enum', () => {
       expect(prop.enum, name).toEqual(['Alex Example', 'Sam Sample']);
       expect(prop.type, name).toBe('string');
     }
+  });
+
+  it('says the names are the schema’s contract while the integer id is still accepted', async () => {
+    const { tools, h } = await served(directory());
+    await h.close();
+    for (const name of ['schoolpass_get_calendar', 'schoolpass_list_pickup_changes']) {
+      const prop = tools.find((t) => t.name === name)!.inputSchema.properties!.student_id!;
+      expect(prop.description, name).toMatch(/by name as listed here/);
+      expect(prop.description, name).toMatch(/also resolves an integer student id from schoolpass_list_students/);
+      expect(prop.description, name).toMatch(/this schema offers the names only/);
+    }
+  });
+
+  it('coerces an integer student id to the digit string the handler resolves', () => {
+    const dir = directory();
+    const arg = studentIdArg(dir);
+    expect(arg.parse(202)).toBe('202');
+    expect(resolveStudentId(dir, arg.parse(202) as string)).toBe(202);
+    expect(resolveStudentId(dir, arg.parse('Alex Example') as string)).toBe(101);
+    expect(() => arg.parse(0)).not.toThrow(); // shape only; resolution refuses it below
+    expect(() => resolveStudentId(dir, arg.parse(0) as string)).toThrow(/Unknown student/);
+  });
+
+  it('both student reads accept an integer id with the enum published', async () => {
+    const fake = fakeClient();
+    const { h } = await served(directory(), fake.client);
+    const a = await h.callTool('schoolpass_get_calendar', { student_id: 101 });
+    const b = await h.callTool('schoolpass_list_pickup_changes', { student_id: 202, date: '2026-11-05' });
+    await h.close();
+    expect(a.isError).toBeFalsy();
+    expect(b.isError).toBeFalsy();
+    expect(fake.gets.map((g) => g.query?.studentId)).toEqual([101, 202]);
   });
 
   it('publishes no enum keyword when nothing was listed', async () => {
