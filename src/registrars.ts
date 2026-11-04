@@ -25,10 +25,22 @@ import { registerChangeTools } from './tools/changes.js';
 import { registerDismissalTools } from './tools/dismissal.js';
 import { registerParentTools } from './tools/parent.js';
 import { registerSessionTools } from './tools/session.js';
+import type { StudentDirectory } from './students.js';
 
-export const TOOL_REGISTRARS: ToolRegistrar<SchoolPassClient>[] = [
-  registerSessionTools,
-  registerParentTools,
-  registerDismissalTools,
-  registerChangeTools,
-];
+/**
+ * The roster, with the student reads' `student_id` publishing the labels in
+ * `students` (listed once at start by `loadStudentDirectory`; null publishes
+ * the plain id). Registrars run per served instance, so the listing is done by
+ * the caller, never in here.
+ */
+export function toolRegistrars(students: StudentDirectory | null): ToolRegistrar<SchoolPassClient>[] {
+  return [
+    registerSessionTools,
+    registerParentTools,
+    (server, client) => registerDismissalTools(server, client, students),
+    registerChangeTools,
+  ];
+}
+
+/** The roster with no student labels — what a server that could not list them serves. */
+export const TOOL_REGISTRARS: ToolRegistrar<SchoolPassClient>[] = toolRegistrars(null);

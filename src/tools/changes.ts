@@ -50,6 +50,7 @@ import { z } from 'zod';
 import { AdType, ENDPOINTS, SchoolPassTimeoutError, StudentChangeType } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
 import { fenceConfirmationGate, spsUntrustedResult } from '../view.js';
+import { schoolMeta } from './hints.js';
 
 /**
  * Day-of-week id the API expects in `dateSet.daysOfWeek`, matching the app's
@@ -239,6 +240,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         'currentDay and the result\'s before/after calendar snapshots carry the day\'s notes and descriptions; ' +
         `both come fenced. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({ title: 'Submit dismissal change', readOnly: false, openWorld: true, destructive: true }),
+      _meta: schoolMeta('change', { aliases: ['absent', 'sick day', 'early dismissal', 'early pickup', 'late arrival', 'carpool', 'bus'] }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date to change (YYYY-MM-DD).'),
@@ -449,6 +451,7 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         "The phase-1 preview's currentDay and wouldCancel, and the result's before/after calendar snapshots, " +
         `carry the day's notes and descriptions; both come fenced. ${UNTRUSTED_DESCRIPTION_SUFFIX}`,
       annotations: toolAnnotations({ title: 'Cancel dismissal change', readOnly: false, openWorld: true, destructive: true, idempotent: false }),
+      _meta: schoolMeta('change', { aliases: ['cancel pickup change', 'undo dismissal change', 'back to normal'] }),
       inputSchema: z.object({
         student_id: z.number().int().positive().describe('Student id (schoolpass_list_students).'),
         date: IsoDate.describe('The date whose change should be cancelled (YYYY-MM-DD).'),
