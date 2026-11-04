@@ -303,11 +303,14 @@ describe('view: brief on the calendar', () => {
     );
   });
 
-  it('a calendar with no day list answers empty text', async () => {
-    const client = { ...fakeClient().client, schoolCode: 1, async get() { return { dailyList: 'none' }; } } as unknown as SchoolPassClient;
+  it.each([
+    ['no day list', { dailyList: 'none' }],
+    ['an empty day list', { dailyList: [] }],
+  ])('a calendar with %s answers the single note line `-- none`', async (_label, payload) => {
+    const client = { ...fakeClient().client, schoolCode: 1, async get() { return payload; } } as unknown as SchoolPassClient;
     const { h } = await served(null, client);
     const res = await h.callTool('schoolpass_get_calendar', { student_id: 101, view: 'brief' });
     await h.close();
-    expect((res.content as Array<{ text: string }>)[0]!.text).toBe('');
+    expect((res.content as Array<{ text: string }>)[0]!.text).toBe('-- none');
   });
 });
