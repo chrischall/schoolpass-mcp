@@ -13,6 +13,7 @@ import { stripCarpoolContacts, viewArg, viewResponse } from '../view.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { ENDPOINTS } from '../protocol.js';
+import { schoolMeta } from './hints.js';
 import type { SchoolPassClient } from '../client.js';
 
 export function registerParentTools(server: McpServer, client: SchoolPassClient): void {
@@ -28,6 +29,7 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
+      _meta: schoolMeta('lookup', { aliases: ['my kids', 'students', 'children'] }),
       inputSchema: z.object({
         view: viewArg(),
       }),
@@ -50,6 +52,7 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
+      _meta: schoolMeta('lookup'),
       inputSchema: z.object({
         view: viewArg(),
       }),
@@ -74,6 +77,7 @@ export function registerParentTools(server: McpServer, client: SchoolPassClient)
         idempotent: true,
         openWorld: true,
       }),
+      _meta: schoolMeta('lookup', { aliases: ['drivers', 'who can pick up', 'carpool'] }),
       inputSchema: z.object({
         include_carpool: z
           .boolean()

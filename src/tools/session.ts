@@ -22,6 +22,7 @@ import { minifiedResult, toolAnnotations } from '@chrischall/mcp-utils';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { UserType } from '../protocol.js';
+import { schoolMeta } from './hints.js';
 import type { SchoolPassClient } from '../client.js';
 
 export function registerSessionTools(server: McpServer, client: SchoolPassClient): void {
@@ -55,6 +56,7 @@ export function registerSessionTools(server: McpServer, client: SchoolPassClient
         idempotent: true,
         openWorld: true,
       }),
+      _meta: schoolMeta('lookup'),
       inputSchema: z.object({}),
     },
     async () => {

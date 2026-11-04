@@ -58,8 +58,8 @@ email/password/school-code — never retry with a guess.
 | `schoolpass_list_students(view?)` | The parent's linked students — name, grade, home dismissal location, aftercare. Gives the `student_id` other tools need. |
 | `schoolpass_get_profile(view?)` | The parent account profile. |
 | `schoolpass_list_drivers(include_carpool?, view?)` | Authorized pickup drivers. `include_carpool: true` adds the carpools each belongs to — other families' data, so compact drops their contact and vehicle fields; ask for `full` only when the user needs them. |
-| `schoolpass_get_calendar(student_id, start_date?, end_date?, view?)` | A student's arrival/dismissal calendar over a range (defaults today → 14 days out). |
-| `schoolpass_list_pickup_changes(student_id, date?, view?)` | Pickup/dismissal changes for a student on a date (defaults today). |
+| `schoolpass_get_calendar(student_id, start_date?, end_date?, view?)` | A student's arrival/dismissal calendar over a range (defaults today → 14 days out). `student_id` takes the student's name as listed or the id; `view: "brief"` gives one line per day entry. |
+| `schoolpass_list_pickup_changes(student_id, date?, view?)` | Pickup/dismissal changes for a student on a date (defaults today). `student_id` takes the name or the id, as on the calendar. |
 | `schoolpass_list_dismissal_locations(view?)` | The school's dismissal locations (car line, bus, aftercare, walkers…) with ids. |
 | `schoolpass_get_school_info(view?)` | Basic school info and per-school config. |
 | `schoolpass_submit_dismissal_change(student_id, date, change_type, …, confirmToken?)` | Submit a dismissal/arrival change (absent, early dismissal, late arrival, move to carpool/bus/location). CONFIRM-GATED: a client that can show a prompt gets one (unless `MCP_CONFIRM_ELICITATION=off`); otherwise the first call makes no change and returns a preview (the child by name, the date, the change, the exact request) plus a `confirmToken`, and only a repeat call with that token submits. Once submitted it re-reads the calendar to prove it landed (`verified:true`). `verified:false` means it WAS submitted but the re-read didn't confirm it; `submitted:"unknown"` means the request timed out and MAY have landed — in both cases never resubmit; re-read the calendar. |
@@ -82,6 +82,12 @@ arrives exactly as `full` would give it: this server hands SchoolPass's
 payloads back close to verbatim and holds no captured fixture or documented
 field list for them, so a named field set would be invented, and an invented
 one returns a record with holes in it that still reads like a verified answer.
+
+`schoolpass_get_calendar` also takes `view: "brief"`: one line per day entry,
+`<change> <side> — <YYYY-MM-DD or "no date"> — <default|changed>` (e.g.
+`carpool departure — 2026-11-05 — default`). It is built from the entry's
+change type, side, date and default flag only — never its description — so it
+carries no third-party text and comes unfenced.
 
 `view: "full"` returns the record untouched, photos included. There is **no
 `raw` rung**: `full` already IS the untouched payload, so a third value could
@@ -121,6 +127,28 @@ A test in `tests/tools.test.ts` asserts this exact roster: if a read tool gains
 `view` and is not added to the covered cases, it fails. That guard exists
 because a sibling repo shipped fourteen tools whose `view` was never wired up,
 and the suite stayed green.
+
+## In context groups
+
+On an mcp-host gateway with context groups on, this server is a member of the
+**`school`** group (every tool but the healthcheck carries a `_meta.mint` hint).
+
+- **Canonical read:** `schoolpass_get_calendar` answers the group's
+  **what's-on** question — the arrival/dismissal plan, day by day, over the
+  asked range (`start_date`/`end_date`), in its `brief` view. Its subject is
+  `student_id`: at start the server lists the parent's students once (bounded
+  to 5 s) and publishes their names as the argument's enum, so the group asks
+  once per child. If the listing fails (not configured yet, a rejected login,
+  SchoolPass slow) the argument stays a plain id and the group reports this
+  source as having no subjects rather than guessing.
+- Nothing here answers what's-new or what's-due; the other reads are lookups
+  and the two dismissal-change writes are `change` (still confirm-gated — a
+  group never writes for you).
+- **A compound ask** looks like "how is everyone getting home tomorrow, and
+  anything due at school?": the group fans this calendar out per child for
+  what's-on beside the other school members' what's-due reads, and answers one
+  combined summary.
+- This server signs in with its own credentials and needs no browser.
 
 ## Notes
 

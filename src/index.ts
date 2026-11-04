@@ -16,8 +16,16 @@
 
 import { runMcp } from '@chrischall/mcp-utils';
 import { client } from './client.js';
-import { TOOL_REGISTRARS } from './registrars.js';
+import { toolRegistrars } from './registrars.js';
+import { loadStudentDirectory } from './students.js';
 import { VERSION } from './version.js';
+
+// The student reads' `student_id` publishes the parent's students as an enum of
+// names (context groups, mcp-host spec 2026-11-03 D5), so list them ONCE here,
+// bounded by STUDENT_LIST_TIMEOUT_MS. Null — not configured yet, a rejected
+// login (latched by the client, so no second attempt), a timeout, no students —
+// publishes the plain id.
+const students = await loadStudentDirectory(client);
 
 await runMcp({
   name: 'schoolpass-mcp',
@@ -25,5 +33,5 @@ await runMcp({
   banner:
     '[schoolpass-mcp] This project was developed and is maintained by AI. Use at your own discretion.',
   deps: client,
-  tools: TOOL_REGISTRARS,
+  tools: toolRegistrars(students),
 });
