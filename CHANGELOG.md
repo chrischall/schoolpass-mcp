@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/chrischall/schoolpass-mcp/compare/v1.1.0...v1.1.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **brief:** align the brief view with the fleet contract ([#118](https://github.com/chrischall/schoolpass-mcp/issues/118)) ([a413876](https://github.com/chrischall/schoolpass-mcp/commit/a41387636ec019056bc57cc0a922d6d90809b43d))
+
 ## [1.1.0](https://github.com/chrischall/schoolpass-mcp/compare/v1.0.10...v1.1.0) (2026-11-04)
 
 
