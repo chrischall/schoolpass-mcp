@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/chrischall/schoolpass-mcp/compare/v1.1.1...v1.1.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **deps:** bump @chrischall/mcp-utils from 3.4.0 to 3.7.1 in the production-dependencies group ([#121](https://github.com/chrischall/schoolpass-mcp/issues/121)) ([d5a85bf](https://github.com/chrischall/schoolpass-mcp/commit/d5a85bfac16c8ffae81b8eeb42a0a21cfc0917ab))
+
 ## [1.1.1](https://github.com/chrischall/schoolpass-mcp/compare/v1.1.0...v1.1.1) (2026-11-04)
 
 
