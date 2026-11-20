@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.2](https://github.com/chrischall/schoolpass-mcp/compare/v1.1.1...v1.1.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** bump @chrischall/mcp-utils from 3.4.0 to 3.7.1 in the production-dependencies group ([#121](https://github.com/chrischall/schoolpass-mcp/issues/121)) ([d5a85bf](https://github.com/chrischall/schoolpass-mcp/commit/d5a85bfac16c8ffae81b8eeb42a0a21cfc0917ab))
+* **deps:** bump @chrischall/mcp-utils from 3.7.1 to 3.9.0 in the production-dependencies group ([#123](https://github.com/chrischall/schoolpass-mcp/issues/123)) ([3f6f96b](https://github.com/chrischall/schoolpass-mcp/commit/3f6f96b7c34fea3172e94bd655715c3fe5b8098f))
+* **submit:** reject early dismissals after the school's pickup cutoff before confirmation ([#125](https://github.com/chrischall/schoolpass-mcp/issues/125)) ([4a7f88e](https://github.com/chrischall/schoolpass-mcp/commit/4a7f88eed4ac7ee187b0d0f4a37d6a1758755422))
+
 ## [1.1.1](https://github.com/chrischall/schoolpass-mcp/compare/v1.1.0...v1.1.1) (2026-11-04)
 
 
