@@ -36,7 +36,8 @@
         "SCHOOLPASS_API_HOST": "${user_config.schoolpass_api_host}",
         "SCHOOLPASS_TIMEZONE": "${user_config.schoolpass_timezone}",
         "SCHOOLPASS_SESSION_CACHE": "${user_config.schoolpass_session_cache}",
-        "SCHOOLPASS_SESSION_FILE": "${user_config.schoolpass_session_file}"
+        "SCHOOLPASS_SESSION_FILE": "${user_config.schoolpass_session_file}",
+        "SCHOOLPASS_EARLY_DISMISSAL_LATEST": "${user_config.schoolpass_early_dismissal_latest}"
       }
     }
   },
@@ -129,6 +130,12 @@
       "type": "string",
       "title": "Session cache file (optional)",
       "description": "Absolute path for the session cache file. Defaults to $MCP_DATA_DIR/.schoolpass-mcp/session.json.",
+      "required": false
+    },
+    "schoolpass_early_dismissal_latest": {
+      "type": "string",
+      "title": "Early-dismissal cutoff fallback (optional)",
+      "description": "Fallback latest pickup time (24-hour HH:MM) for an early dismissal, used only when the school's own early-pickup cutoff cannot be read from SchoolPass. No default: unset, an unreadable school cutoff is simply not checked up front.",
       "required": false
     }
   },

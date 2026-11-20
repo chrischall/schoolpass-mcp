@@ -58,6 +58,12 @@
           "description": "Absolute path for the session cache file. Defaults to $MCP_DATA_DIR/.schoolpass-mcp/session.json.",
           "isRequired": false,
           "format": "string"
+        },
+        {
+          "name": "SCHOOLPASS_EARLY_DISMISSAL_LATEST",
+          "description": "Fallback latest pickup time (24-hour HH:MM) for an early dismissal, used only when the school's own early-pickup cutoff cannot be read from SchoolPass. No default: unset, an unreadable school cutoff is simply not checked up front.",
+          "isRequired": false,
+          "format": "string"
         }
       ]
     }

@@ -155,6 +155,37 @@ Traps, each observed live:
   the notes above name explicitly. `activity` is left optional because no
   capture confirms it needs one, and a wrong refusal is as bad as a wrong write.
 
+**Early-dismissal cutoff — `GET v1/admin/cutofftimes`** (query `schoolCode`).
+Despite the admin path a parent token reads it (verified live, school 1183,
+2026-11-20; `v2/` answers the same):
+
+```jsonc
+[{ "day": 1, "earlyPickup": "2:10 PM", "pmCutoff": "2:55 PM", "amCutoff": "7:00 AM" }, … one row per school day (1=Mon … 5=Fri)]
+```
+
+- `day` is .NET `DayOfWeek` (Sunday=0); Monday–Saturday match the ISO ids the
+  submit body uses.
+- `earlyPickup` is the **latest pickup time** an `EarlyDismissal` may request.
+  SchoolPass enforces it at submit with `400 "This change is after the cutoff
+  time and will not be accepted. Please contact the school."` That text reads
+  like a missed submission deadline, but it is not one. On 2026-11-20 a 14:30
+  early dismissal was refused three times starting at 7:04 AM (hours before the
+  cutoff), while 14:00 for the same day went through and verified. Times
+  between 14:01 and 14:10 have not been tried live. The boundary is assumed to
+  be inclusive.
+- `amCutoff` / `pmCutoff` are probably same-day submission deadlines for
+  arrival/dismissal changes. That is UNVERIFIED and not used.
+- Other places checked, none of which carry the limit: `Config/configsettings`,
+  `Config/psasettings` (only `showChangeEarlyDismissal: true`),
+  `dismissal/getDismissalSessionTimes` (empty), every dismissal location's
+  `dismissalSessionTimeId` (0), and the student calendar.
+- The submit tool reads this cutoff on every early-dismissal call. It refuses a
+  later `time_of_day` before any confirmToken is issued, with
+  `EARLY_DISMISSAL_AFTER_CUTOFF`. If the read fails, it falls back to
+  `SCHOOLPASS_EARLY_DISMISSAL_LATEST`. There is no built-in value: with neither,
+  the up-front check is skipped. It also translates the server's 400 into the
+  same error (`latestAllowed: null` when no cutoff is known).
+
 **Cancel — `DELETE studentchange/DeleteMobileChange`** (query `schoolCode`,
 `ChangeSeriesId`, `ChangeType`, `ADType`, `dt`). Keyed on the `changeSeriesId`
 the calendar reports for the change. A date can carry more than one change, so

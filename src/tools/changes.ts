@@ -43,12 +43,14 @@ import {
   confirmationFromEnv,
   hashConfirmPayload,
   requireConfirmationWithFallback,
+  textResult,
   toolAnnotations,
 } from '@chrischall/mcp-utils';
-import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
+import type { CallToolResult, McpServer, ServerContext } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { AdType, ENDPOINTS, SchoolPassTimeoutError, StudentChangeType } from '../protocol.js';
+import { AdType, ENDPOINTS, SchoolPassApiError, SchoolPassTimeoutError, StudentChangeType } from '../protocol.js';
 import type { SchoolPassClient } from '../client.js';
+import { parseTimeOfDay, resolveEarlyDismissalCutoff, type EarlyDismissalCutoff } from '../cutoff.js';
 import { fenceConfirmationGate, spsUntrustedResult } from '../view.js';
 import { schoolMeta } from './hints.js';
 
@@ -209,6 +211,69 @@ async function requireStudent(client: SchoolPassClient, studentId: number): Prom
   return { id: studentId, name: name || `student ${studentId}` };
 }
 
+/**
+ * A refusal the caller can act on without parsing prose: `isError`, with a
+ * JSON `{ error: { code, message, … } }` body. Used for the early-dismissal
+ * checks, which must say exactly which time to retry with.
+ */
+function structuredError(error: { code: string; message: string } & Record<string, unknown>): CallToolResult {
+  return { ...textResult({ error }), isError: true };
+}
+
+const CUTOFF_SOURCE_WORDS: Record<EarlyDismissalCutoff['source'], string> = {
+  school: "the school's early-pickup cutoff in SchoolPass",
+  config: 'SCHOOLPASS_EARLY_DISMISSAL_LATEST (the school setting could not be read)',
+};
+
+/**
+ * The EARLY_DISMISSAL_AFTER_CUTOFF refusal. SchoolPass's own wording ("after
+ * the cutoff time … contact the school") reads like a missed SUBMISSION
+ * deadline and once sent a parent to the front office; the limit is on the
+ * requested pickup time, so the message says so in as many words.
+ */
+function afterCutoffError(requested: string, cutoff: EarlyDismissalCutoff): CallToolResult {
+  return structuredError({
+    code: 'EARLY_DISMISSAL_AFTER_CUTOFF',
+    message:
+      `Early-dismissal pickup at ${requested} is later than the latest the school accepts, ${cutoff.latest} ` +
+      `(from ${CUTOFF_SOURCE_WORDS[cutoff.source]}). The limit is on the PICKUP TIME, not on when the ` +
+      `request is submitted. Nothing was sent and no confirmation was issued.`,
+    requested,
+    latestAllowed: cutoff.latest,
+    latestAllowedSource: cutoff.source,
+    suggestion: `Retry with time_of_day "${cutoff.latest}" or earlier, or call the school`,
+  });
+}
+
+/**
+ * SchoolPass's own cutoff 400, translated. It only gets to refuse a time this
+ * call already checked against any known cutoff (a later one is refused in
+ * phase 1), so the known cutoff — if any — is evidently too late and the
+ * suggestion cannot repeat it; `latestAllowed` is `null` when none was known.
+ */
+function serverCutoffError(requested: string, cutoff: EarlyDismissalCutoff | undefined): CallToolResult {
+  return structuredError({
+    code: 'EARLY_DISMISSAL_AFTER_CUTOFF',
+    message:
+      `SchoolPass refused this early dismissal with "after the cutoff time": the requested pickup time ` +
+      `${requested} is later than the school allows. The limit is on the PICKUP TIME, not on when the ` +
+      `request is submitted — submitting earlier in the day will not help. Nothing was recorded.` +
+      (cutoff
+        ? ` The last known cutoff was ${cutoff.latest} (from ${CUTOFF_SOURCE_WORDS[cutoff.source]}), so the ` +
+          `school's limit is evidently earlier than that.`
+        : ` The school's cutoff could not be read, so the latest allowed time is not known.`),
+    requested,
+    latestAllowed: cutoff?.latest ?? null,
+    ...(cutoff ? { latestAllowedSource: cutoff.source } : {}),
+    suggestion: `Retry with a time_of_day earlier than "${requested}", or call the school`,
+  });
+}
+
+/** SchoolPass's 400 for an early dismissal past the cutoff. */
+function isCutoffRejection(err: unknown): boolean {
+  return err instanceof SchoolPassApiError && err.status === 400 && /after the cutoff time/i.test(err.message);
+}
+
 /** A request that may or may not have reached SchoolPass. */
 function outcomeUnknown(err: unknown): boolean {
   return err instanceof SchoolPassTimeoutError || (err instanceof Error && err.name === 'AbortError');
@@ -231,6 +296,10 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
       description:
         'Submit a dismissal/arrival change for a student on a single date — send them to a different ' +
         'dismissal location or carpool, mark early dismissal / late arrival / absent, etc. ' +
+        'EARLY DISMISSAL needs time_of_day (24-hour HH:MM) and has a latest allowed pickup time set by the ' +
+        "school (read live from the school's SchoolPass settings). A later pickup time is rejected before " +
+        'confirmation with error code EARLY_DISMISSAL_AFTER_CUTOFF and latestAllowed — the limit is on the ' +
+        'pickup time, not on when the request is submitted. ' +
         CONFIRM_NOTE +
         ' Once confirmed it submits and then re-reads the calendar to show the change landed ' +
         '(verified:true); if the re-read fails or does not show it yet the result is verified:false — the ' +
@@ -272,7 +341,13 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         notes: z.string().optional().describe('Optional note attached to the change.'),
         pickup_dropoff_person: z.string().optional().describe('Optional name of the person picking up / dropping off.'),
         will_return: z.boolean().optional().describe('Whether the student will return the same day (for early dismissal).'),
-        time_of_day: z.string().optional().describe('Optional time of day for the change (e.g. "14:30").'),
+        time_of_day: z
+          .string()
+          .optional()
+          .describe(
+            'Time of day for the change, 24-hour HH:MM (e.g. "13:15"). REQUIRED for early_dismissal, where it ' +
+              "is the pickup time and must not be later than the school's early-pickup cutoff.",
+          ),
         confirmToken: confirmTokenParam,
       }),
     },
@@ -289,6 +364,44 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
               ? 'Pass the carpool id (from the student calendar\'s moveToId) — for a carpool move this is a carpool id, NOT a dismissal location id.'
               : 'Pass the target id for the bus move (schoolpass_list_dismissal_locations).',
         });
+      }
+
+      // time_of_day goes to SchoolPass verbatim; only HH:MM has been seen
+      // accepted live, so anything else is refused here rather than sent.
+      if (args.time_of_day !== undefined && parseTimeOfDay(args.time_of_day) === null) {
+        return structuredError({
+          code: 'INVALID_TIME_OF_DAY',
+          message: `time_of_day must be a 24-hour HH:MM time such as "13:15" (got ${JSON.stringify(args.time_of_day)}).`,
+          requested: args.time_of_day,
+          suggestion: 'Retry with time_of_day in 24-hour HH:MM form, e.g. "13:15" for 1:15 PM.',
+        });
+      }
+
+      // Early dismissal: the school refuses a pickup time past its cutoff —
+      // but only at submit, AFTER the parent approved the preview. Check it
+      // here, before any confirmToken exists. A refusal issues no token and
+      // sends nothing. The cutoff is read on every call (each phase).
+      // With no cutoff known (school setting unreadable, env unset) there is
+      // nothing to check against — no built-in guess — and SchoolPass's own
+      // 400 is still translated at submit.
+      let cutoff: EarlyDismissalCutoff | undefined;
+      if (args.change_type === 'early_dismissal') {
+        cutoff = await resolveEarlyDismissalCutoff(client, args.date);
+        if (args.time_of_day === undefined) {
+          return structuredError({
+            code: 'TIME_OF_DAY_REQUIRED',
+            message:
+              'An early dismissal needs a pickup time: pass time_of_day (24-hour HH:MM).' +
+              (cutoff ? ` The latest the school accepts is ${cutoff.latest}.` : ''),
+            ...(cutoff ? { latestAllowed: cutoff.latest, latestAllowedSource: cutoff.source } : {}),
+            suggestion: cutoff
+              ? `Retry with time_of_day "${cutoff.latest}" or earlier.`
+              : 'Retry with the pickup time as time_of_day.',
+          });
+        }
+        if (cutoff && parseTimeOfDay(args.time_of_day)! > parseTimeOfDay(cutoff.latest)!) {
+          return afterCutoffError(args.time_of_day, cutoff);
+        }
       }
 
       const changeType = CHANGE_TYPES[args.change_type];
@@ -376,6 +489,11 @@ export function registerChangeTools(server: McpServer, client: SchoolPassClient)
         // happened" and invite the duplicate-change retry, so the honest
         // answer — unknown — is reported as a result, not an error. A real
         // rejection (400/500) means the write did NOT land and surfaces as usual.
+        // SchoolPass's cutoff 400 is translated: its wording sends a parent
+        // after a submission deadline when the problem is the pickup time.
+        if (args.change_type === 'early_dismissal' && args.time_of_day !== undefined && isCutoffRejection(err)) {
+          return serverCutoffError(args.time_of_day, cutoff);
+        }
         if (!outcomeUnknown(err)) throw err;
         return spsUntrustedResult({
           submitted: 'unknown',
