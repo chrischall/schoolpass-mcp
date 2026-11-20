@@ -3,7 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/server';
 import { createTestHarness, parseToolResult, type TestHarness } from '@chrischall/mcp-utils/test';
 import { parseFenced } from './_fence.js';
 import type { SchoolPassClient } from '../src/client.js';
-import { AdType, ENDPOINTS, SchoolPassTimeoutError, StudentChangeType } from '../src/protocol.js';
+import { AdType, ENDPOINTS, SchoolPassApiError, SchoolPassTimeoutError, StudentChangeType } from '../src/protocol.js';
 import { registerChangeTools, buildChangeBody, dayOfWeekId } from '../src/tools/changes.js';
 
 // Fixture families. Invented names, never a real record.
@@ -791,6 +791,227 @@ describe('schoolpass_submit_dismissal_change — preview wording', () => {
     expect(raw.isError).toBe(true);
     expect(raw.content[0]).toMatchObject({ type: 'text', text: expect.stringMatching(/not one of this parent/) });
     expect(submits).toHaveLength(0);
+    await h.close();
+  });
+});
+
+describe('schoolpass_submit_dismissal_change — early-dismissal cutoff', () => {
+  /** What `GET v1/admin/cutofftimes` answered live: 2:10 PM every weekday. */
+  const CUTOFFS = [1, 2, 3, 4, 5].map((day) => ({ day, earlyPickup: '2:10 PM', pmCutoff: '2:55 PM', amCutoff: '7:00 AM' }));
+  const LANDED_EARLY = {
+    isDefault: false,
+    changeId: 77,
+    changeSeriesId: 7777,
+    studentChangeType: StudentChangeType.EarlyDismissal,
+    adType: AdType.Departure,
+    moveToId: null,
+  };
+
+  function earlyClient(opts: { cutoffs?: () => unknown; submit?: () => Promise<unknown> } = {}): {
+    client: SchoolPassClient;
+    submits: unknown[];
+  } {
+    const submits: unknown[] = [];
+    let submitted = false;
+    const client = {
+      schoolCode: 1183,
+      async getMemberId() {
+        return 15348;
+      },
+      async submitStudentChange(body: unknown) {
+        submits.push(body);
+        if (opts.submit) return opts.submit();
+        submitted = true;
+        return { success: true };
+      },
+      async get(path: string) {
+        if (path === ENDPOINTS.parentStudents) return STUDENTS;
+        if (path === ENDPOINTS.cutoffTimes) return (opts.cutoffs ?? (() => CUTOFFS))();
+        return { dailyList: submitted ? [LANDED_EARLY] : [DEFAULT_CARPOOL] };
+      },
+    } as unknown as SchoolPassClient;
+    return { client, submits };
+  }
+
+  // 2026-11-20 — the Friday of the incident.
+  const EARLY = { student_id: 11278, date: '2026-11-20', change_type: 'early_dismissal' };
+
+  interface CutoffError {
+    code: string;
+    requested?: string;
+    latestAllowed?: string;
+    suggestion?: string;
+    message: string;
+  }
+  const errorOf = (raw: CallToolResult): CutoffError => parseToolResult<{ error: CutoffError }>(raw).error;
+
+  const savedLatest = process.env.SCHOOLPASS_EARLY_DISMISSAL_LATEST;
+  afterEach(() => {
+    if (savedLatest === undefined) delete process.env.SCHOOLPASS_EARLY_DISMISSAL_LATEST;
+    else process.env.SCHOOLPASS_EARLY_DISMISSAL_LATEST = savedLatest;
+  });
+
+  it('refuses a pickup after the cutoff in phase 1: structured error, no token, nothing sent', async () => {
+    const { client, submits } = earlyClient({ cutoffs: () => CUTOFFS.map((c) => ({ ...c, earlyPickup: '2:00 PM' })) });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: '14:30' });
+    expect(raw.isError).toBe(true);
+    expect(JSON.stringify(raw)).not.toMatch(/confirmToken/);
+    const err = errorOf(raw);
+    expect(err).toMatchObject({
+      code: 'EARLY_DISMISSAL_AFTER_CUTOFF',
+      requested: '14:30',
+      latestAllowed: '14:00',
+      suggestion: 'Retry with time_of_day "14:00" or earlier, or call the school',
+    });
+    // The parent must not be sent chasing a submission deadline.
+    expect(err.message).toMatch(/pickup time/i);
+    expect(err.message).toMatch(/not .*when/i);
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it.each(['14:00', '13:15'])('lets %s through to the usual preview + token', async (time) => {
+    const { client, submits } = earlyClient({ cutoffs: () => CUTOFFS.map((c) => ({ ...c, earlyPickup: '2:00 PM' })) });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: time });
+    expect(raw.isError).toBeFalsy();
+    const res = parseToolResult<PhaseOne>(raw);
+    expect(res.status).toBe('confirmation-required');
+    expect(res.confirmToken).toBeTruthy();
+    expect(res.preview.change.timeOfDay).toBe(time);
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('confirms and verifies an in-range early dismissal exactly as before', async () => {
+    const { client, submits } = earlyClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: '14:00' });
+    const res = parseFenced<{ submitted: boolean; verified: boolean }>(raw);
+    expect(res).toMatchObject({ submitted: true, verified: true });
+    expect((submits[0] as { timeOfDay: string }).timeOfDay).toBe('14:00');
+    await h.close();
+  });
+
+  it.each(['2:30 PM', '1430', '25:00', '14:3'])('refuses a malformed time_of_day %j before anything is read or sent', async (bad) => {
+    const { client, submits } = earlyClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: bad });
+    expect(raw.isError).toBe(true);
+    expect(errorOf(raw)).toMatchObject({ code: 'INVALID_TIME_OF_DAY', requested: bad });
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('validates time_of_day on any change type, not only early dismissal', async () => {
+    const { client } = earlyClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...CARPOOL_ARGS, time_of_day: 'noon' });
+    expect(errorOf(raw).code).toBe('INVALID_TIME_OF_DAY');
+    await h.close();
+  });
+
+  it('requires time_of_day for an early dismissal', async () => {
+    const { client, submits } = earlyClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', EARLY);
+    expect(raw.isError).toBe(true);
+    expect(errorOf(raw)).toMatchObject({ code: 'TIME_OF_DAY_REQUIRED', latestAllowed: '14:10' });
+    expect(submits).toHaveLength(0);
+    await h.close();
+  });
+
+  it('uses SCHOOLPASS_EARLY_DISMISSAL_LATEST when the school cutoff cannot be read', async () => {
+    process.env.SCHOOLPASS_EARLY_DISMISSAL_LATEST = '13:00';
+    const { client } = earlyClient({ cutoffs: () => { throw new Error('HTTP 403'); } });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: '13:15' });
+    expect(errorOf(raw)).toMatchObject({ code: 'EARLY_DISMISSAL_AFTER_CUTOFF', latestAllowed: '13:00' });
+    await h.close();
+  });
+
+  it('skips the up-front check when no cutoff is known (no built-in guess) and previews as usual', async () => {
+    delete process.env.SCHOOLPASS_EARLY_DISMISSAL_LATEST;
+    const { client } = earlyClient({ cutoffs: () => { throw new Error('HTTP 403'); } });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await h.callTool('schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: '16:45' });
+    expect(raw.isError).toBeFalsy();
+    expect(parseToolResult<PhaseOne>(raw).status).toBe('confirmation-required');
+    await h.close();
+  });
+
+  it('still requires time_of_day when no cutoff is known, without inventing a latestAllowed', async () => {
+    delete process.env.SCHOOLPASS_EARLY_DISMISSAL_LATEST;
+    const { client } = earlyClient({ cutoffs: () => { throw new Error('HTTP 403'); } });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const err = errorOf(await h.callTool('schoolpass_submit_dismissal_change', EARLY));
+    expect(err.code).toBe('TIME_OF_DAY_REQUIRED');
+    expect(err.latestAllowed).toBeUndefined();
+    await h.close();
+  });
+
+  it('maps the server’s cutoff 400 with latestAllowed null when no cutoff is known', async () => {
+    delete process.env.SCHOOLPASS_EARLY_DISMISSAL_LATEST;
+    const { client } = earlyClient({
+      cutoffs: () => { throw new Error('HTTP 403'); },
+      submit: async () => {
+        throw new SchoolPassApiError(400, ENDPOINTS.studentChange, 'This change is after the cutoff time and will not be accepted. Please contact the school.');
+      },
+    });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: '14:30' });
+    const err = errorOf(raw);
+    expect(err).toMatchObject({ code: 'EARLY_DISMISSAL_AFTER_CUTOFF', requested: '14:30', latestAllowed: null });
+    expect(err.message).toMatch(/pickup time/i);
+    expect(err.suggestion).toMatch(/earlier than "14:30"/);
+    await h.close();
+  });
+
+  it('maps the server’s 400 "after the cutoff time" to the same structured error', async () => {
+    const { client, submits } = earlyClient({
+      submit: async () => {
+        throw new SchoolPassApiError(
+          400,
+          ENDPOINTS.studentChange,
+          'This change is after the cutoff time and will not be accepted. Please contact the school.',
+        );
+      },
+    });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: '14:10' });
+    expect(submits).toHaveLength(1);
+    expect(raw.isError).toBe(true);
+    const err = errorOf(raw);
+    expect(err).toMatchObject({ code: 'EARLY_DISMISSAL_AFTER_CUTOFF', requested: '14:10', latestAllowed: '14:10' });
+    expect(err.message).toMatch(/pickup time/i);
+    expect(err.suggestion).toMatch(/earlier than "14:10"/);
+    await h.close();
+  });
+
+  it('leaves other 400s from the submit alone', async () => {
+    const { client } = earlyClient({
+      submit: async () => {
+        throw new SchoolPassApiError(400, ENDPOINTS.studentChange, 'Date range does not produce any dates.');
+      },
+    });
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const raw = await confirmed(h, 'schoolpass_submit_dismissal_change', { ...EARLY, time_of_day: '13:00' });
+    expect(raw.isError).toBe(true);
+    expect(JSON.stringify(raw)).toMatch(/Date range does not produce any dates/);
+    expect(JSON.stringify(raw)).not.toMatch(/EARLY_DISMISSAL_AFTER_CUTOFF/);
+    await h.close();
+  });
+
+  it('says so in the tool description', async () => {
+    const { client } = earlyClient();
+    const h = await createTestHarness((s) => registerChangeTools(s, client));
+    const { tools } = await h.client.listTools();
+    const desc = tools.find((t) => t.name === 'schoolpass_submit_dismissal_change')!.description!;
+    expect(desc).toMatch(/latest allowed pickup time/i);
+    expect(desc).toMatch(/before confirmation/i);
+    // Nothing school-specific is baked into shipped text.
+    expect(desc).not.toMatch(/\d{1,2}:\d{2}/);
     await h.close();
   });
 });

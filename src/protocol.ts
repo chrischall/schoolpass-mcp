@@ -132,6 +132,8 @@ export const ENDPOINTS = {
   pickupChangesSince: 'PickupChange/GetChangesSince',
   dismissalLocations: 'dismissal/getDismissalLocations',
   schoolInfoBasic: 'SchoolInfo/GetBasicSchoolInfo',
+  /** Per-weekday `earlyPickup` / `amCutoff` / `pmCutoff`; admin path, but parent-readable (verified live). */
+  cutoffTimes: 'v1/admin/cutofftimes',
   studentChange: 'studentchange',
   deleteStudentChange: 'studentchange/DeleteMobileChange',
 } as const;
